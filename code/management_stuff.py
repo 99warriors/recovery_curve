@@ -75,6 +75,20 @@ class call_and_save(object):
             self.f.print_handler_f(x, full_path)
         return x
 
+
+
+class call_and_key(object):
+    """
+    decorator that just sets the key 
+    """
+    def __init__(self, f):
+        self.f = f
+
+    def __call__(self, *args, **kwargs):
+        key = self.f.key_f(self.f, *args, **kwargs):
+        return set_hard_coded_key_dec(self.f, key)(*args, **kwargs)
+
+
 class call_and_cache(object):
     """
     decorator for functions that does dictionary based memoizing
@@ -144,6 +158,9 @@ class keyed_object(object):
     def __repr__(self):
         return self.get_key()
 
+    def __cmp__(self, other):
+        return self.get_key() == other.get_key()
+
 def not_implemented_f(*args, **kwargs):
     raise NotImplementedError
 
@@ -163,6 +180,8 @@ class possibly_cached(keyed_object):
     read_f = staticmethod(not_implemented_f)
 
     to_recalculate = None
+
+    to_savefile = False
 
     def __call__(self, *args, **kwargs):
         raise NotImplementedError
