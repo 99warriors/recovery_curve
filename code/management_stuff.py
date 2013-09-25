@@ -3,6 +3,8 @@ functions involved in using convert_to_print_form_functions, get_file_location_f
 """
 
 import os
+import pdb
+import functools
 
 class print_adapter(object):
     """
@@ -63,19 +65,26 @@ class call_and_save(object):
     def __init__(self, f):
         self.f = f
 
-    def __call__(self, *args, **kwargs):
-
-        location = self.f.location_f(self.f, *args, **kwargs)
-        key = self.f.key_f(self.f, *args, **kwargs)
+    def __call__(self, inst, *args, **kwargs):
+        location = inst.location_f(*args, **kwargs)
+        key = inst.key_f(*args, **kwargs)
         full_path = '%s/%s' % (location, key)
-        if os.path.exists(full_path) and not self.f.to_recalculate:
-            x = set_location_dec(set_hard_coded_key_dec(self.f.read_f, key), location)(full_path)
+        if os.path.exists(full_path) and not inst.to_recalculate:
+            x = set_location_dec(set_hard_coded_key_dec(inst.read_f, key), location)(full_path)
         else:
-            x = set_location_dec(set_hard_coded_key_dec(self.f, key), location)(*args, **kwargs)
-            self.f.print_handler_f(x, full_path)
+            x = set_location_dec(set_hard_coded_key_dec(self.f, key), location)(inst, *args, **kwargs)
+            if not os.path.exists(location):
+                pdb.set_trace()
+                os.makedirs(location)
+            inst.print_handler_f(x, full_path)
         return x
 
-
+    def __get__(self, inst, cls):
+        return functools.partial(self, inst)
+        pdb.set_trace()
+        self.inst = inst
+        self.cls = cls
+        return self.__call__
 
 class call_and_key(object):
     """
@@ -84,10 +93,15 @@ class call_and_key(object):
     def __init__(self, f):
         self.f = f
 
-    def __call__(self, *args, **kwargs):
-        key = self.f.key_f(self.f, *args, **kwargs):
-        return set_hard_coded_key_dec(self.f, key)(*args, **kwargs)
+    def __call__(self, inst, *args, **kwargs):
+        key = inst.key_f(*args, **kwargs)
+        return set_hard_coded_key_dec(self.f, key)(inst, *args, **kwargs)
 
+    def __get__(self, inst, cls):
+        #self.inst = inst
+        #self.cls = cls
+        #return self.__call__
+        return functools.partial(self, inst)
 
 class call_and_cache(object):
     """
@@ -97,16 +111,23 @@ class call_and_cache(object):
         self.f = f
         self.cache = {}
 
-    def __call__(self, *args, **kwargs):
-        key = self.f.key_f(*args, **kwargs)
+    def __call__(self, inst, *args, **kwargs):
+        """
+        call_and_cache __call__
+        """
+        key = inst.key_f(*args, **kwargs)
         try:
-            return self.cache[key]
+            x = self.cache[key]
+            print 'FOUND'
         except KeyError:
-            x = set_hard_coded_key_dec(self.f, key)(*args, **kwargs)
+            x = set_hard_coded_key_dec(self.f, key)(inst, *args, **kwargs)
+            #x = self.f(inst, *args, **kwargs)
             self.cache[key] = x
             return x
 
+    def __get__(self, inst, cls):
 
+        return functools.partial(self, inst)
 
 class save_object(object):
     """
@@ -134,10 +155,11 @@ class keyed_object(object):
         return self.hard_coded_key
 
     def set_hard_coded_key(self, hard_coded_key):
-        assert type(key) == str
+        assert type(hard_coded_key) == str
         self.hard_coded_key = hard_coded_key
 
     def get_introspection_key(self):
+        print type(self)
         raise NotImplementedError
 
     def get_key(self):
@@ -150,13 +172,10 @@ class keyed_object(object):
         return self.location
 
     def set_location(self, location):
-        return self.location
+        self.location = location
 
     def get_full_path(self):
         return '%s/%s' % (self.get_location(), self.get_key())
-
-    def __repr__(self):
-        return self.get_key()
 
     def __cmp__(self, other):
         return self.get_key() == other.get_key()
@@ -211,7 +230,8 @@ def set_location_dec(f, location):
         x = f(*args, **kwargs)
         try:
             x.set_location(location)
-        except AttributeError:
+        except AttributeError, e:
+            print e
             pass
         return x
 

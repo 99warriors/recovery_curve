@@ -1,6 +1,6 @@
 
 
-data_home = './'
+data_home = './scratch'
 train_diffcovs_r_script = ''
 xs_file = '../raw_data/xs.csv'
 ys_folder = '../raw_data/series'
@@ -10,6 +10,7 @@ from management_stuff import *
 import pandas
 import numpy as np
 import functools
+import math
 
 """
 read_fs
@@ -33,22 +34,22 @@ def read_diffcovs_data(folder):
     xbs_file = '%s/%s' % (folder, 'xbs.csv')
     xcs_file = '%s/%s' % (folder, 'xcs.csv')
     ss_file = '%s/%s' % (folder, 'ss.csv')
-    pids = pd.read_csv(pids_file, header=False, squeeze=True)
-    xasd = pd.read_csv(xbs_file, header=True, index_col=0)
-    xbs = pd.read_csv(xbs_file, header=True, index_col=0)
-    xcs = pd.read_csv(xcs_file, header=True, index_col=0)
-    ss = pd.read_csv(ss_file, header=False, index_col=0, squeeze=True)
+    pids = pd.read_csv(pids_file, header=None, squeeze=True)
+    xas = pd.read_csv(xbs_file, header=0, index_col=0)
+    xbs = pd.read_csv(xbs_file, header=0, index_col=0)
+    xcs = pd.read_csv(xcs_file, header=0, index_col=0)
+    ss = pd.read_csv(ss_file, header=None, index_col=0, squeeze=True)
     ys_folder = '%s/%s' % (folder, 'datapoints')
     l = []
-    for pid, xa, xb, xc, s in zip(pids, xas, xbs, xcs, ss):
+    for pid, xa, xb, xc, s in zip(pids, xas.iteritems(), xbs.iteritems(), xcs.iteritems(), ss):
         p_ys_file = '%s/%s' % (ys_folder, pid)
-        p_ys = pd.read_csv(p_ys_file,header=False, index_col = 1)
-        l.append(datum(pid, xa, xb, xc, s, p_ys))
+        p_ys = pd.read_csv(p_ys_file,header=None, index_col = 0, squeeze=True)
+        l.append(datum(pid, xa[1], xb[1], xc[1], s, p_ys))
     return data(l)
 
-def read_dataframe(full_path):
+def read_DataFrame(full_path):
     import pandas
-    return keyed_DataFrame(pandas.from_csv(full_path, index_col=0, header=0))
+    return keyed_DataFrame(pandas.read_csv(full_path, index_col=0, header=0))
 
 """
 print_fs
@@ -58,12 +59,12 @@ def write_diffcovs_data(d, folder):
     files: xas, xbs, xcs, s, folder with 1 file for every series
     """
     import pandas as pd
-    pids = [p.pid for p in d]
+    pids = pandas.Series([p.pid for p in d])
     pids_file = '%s/%s' % (folder, 'pids.csv')
     pids.to_csv(pids_file, header=False, index=False)
-    xas = pd.DataFrame([p.xa for p in d], index = pids)
-    xbs = pd.DataFrame([p.xb for p in d], index = pids)
-    xcs = pd.DataFrame([p.xc for p in d], index = pids)
+    xas = pd.DataFrame({p.pid:p.xa for p in d})
+    xbs = pd.DataFrame({p.pid:p.xa for p in d})
+    xcs = pd.DataFrame({p.pid:p.xa for p in d})
     ss = pd.Series([p.s for p in d], index = pids)
     xas_file = '%s/%s' % (folder, 'xas.csv')
     xas.to_csv(xas_file, header=True, index=True)
@@ -82,7 +83,7 @@ def write_diffcovs_data(d, folder):
 def hypers_print_f(h):
     return '%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,' % (h.c_a,h.c_b,h.c_c,h.l_a,h.l_b,h.l_c,h.l_m)
 
-def write_dataframe(df, full_path):
+def write_DataFrame(df, full_path):
     df.to_csv(full_path, header=True, index=True)
 
 
@@ -90,14 +91,16 @@ def write_dataframe(df, full_path):
 keyed_objects
 """
 
-class keyed_dict(keyed_object):
+class keyed_dict(dict, keyed_object):
     pass
 
-class keyed_DataFrame(keyed_object):
+class keyed_DataFrame(pandas.DataFrame, keyed_object):
     pass
 
-class keyed_list(keyed_object):
-    pass
+class keyed_list(list, keyed_object):
+   
+    def get_introspection_key(self):
+        return '_'.join([x.get_key() for x in self])
 
 """
 id_iterators
@@ -120,6 +123,9 @@ features
 
 class feat(keyed_object):
 
+    def __repr__(self):
+        return self.get_key()
+
     def __hash__(self):
         return self.get_key()
 
@@ -135,13 +141,16 @@ class ucla_cov_f(feat):
     age, race, gleason, stage, psa, comor = range(6)
     cov_names = {age:'age', race:'race', gleason:'gleason', stage:'stage', psa:'psa', comor:'comor'}
 
+    def get_introspection_key(self):
+        return ucla_cov_f.cov_names[self.which_cov]
+
     def __init__(self, which_cov):
         import pandas
         self.which_cov = which_cov
         self.all_covs = pandas.read_csv(xs_file, index_col=0)
 
     def __call__(self, pid):
-        return self.all_covs[pid][ucla_cov_f.cov_names]
+        return self.all_covs[pid][ucla_cov_f.cov_names[self.which_cov]]
 
 class bin_f(feat):
 
@@ -196,6 +205,7 @@ class train_better_pops_f(possibly_cached):
 
     to_recalculate = False
 
+    @call_and_key
     def __call__(self, data):
         """
         averages curves, and then fits a curve to it
@@ -203,9 +213,9 @@ class train_better_pops_f(possibly_cached):
         def obj_f(x):
             a,b,c = x[0],x[1],x[2]
             error = 0.0
-            for k,data in d.iteritems():                                                        
-                for t,v in data.data_points.iteritems():
-                    fitted_val = the_f(t,data.cov.s,a,b,c)
+            for datum in data:
+                for t,v in datum.ys.iteritems():
+                    fitted_val = the_f(t,datum.s,a,b,c)
                     error = error + pow(fitted_val - v, 2)
             return error
 
@@ -407,7 +417,7 @@ class cross_validated_scores_f(possibly_cached):
             train_data = call_and_save(get_data_fold_training(i, self.fold_k))(data)
             test_data = call_and_save(get_data_fold_training(i, self.fold_k))(data)
             predictor = self.get_predictor_f(train_data)
-            fold_scores.append(pandas.DataFrame({datum.pid:{time:predictor(datum, time) for time} for datum in test_data}))
+            fold_scores.append(pandas.DataFrame({datum.pid:{time:predictor(datum, time) for time in self.times} for datum in test_data}))
         return keyed_DataFrame(pandas.concat(fold_scores, axis=1))
 
 class scaled_logistic_loss_f(keyed_object):
@@ -450,9 +460,9 @@ class performance_series_f(possibly_cached):
     def location_f(self, data):
         '%s/%s' % (data.get_location(), tester_f.__class__.__name__)
 
-    print_handler_f = staticmethod(write_dataframe)
+    print_handler_f = staticmethod(write_DataFrame)
 
-    read_f = staticmethod(read_dataframe)
+    read_f = staticmethod(read_DataFrame)
 
     to_recalculate = False
 
@@ -466,16 +476,32 @@ class datum(keyed_object):
         self.pid, self.xa, self.xb, self.xc, self.s, self.ys = pid, xa, xb, xc, s, ys
 
 
-class data(keyed_object):
+class data(keyed_list):
 
-    def __init__(self, l):
-        self.l = l
+#    def __init__(self, l):
+#        self.l = l
 
-    def __iter__(self):
+    def get_introspection_key(self):
+        return 'data'
+        #return '%s_%s' % ('data', self.l.get_key())
+
+#    def __iter__(self):
         return self.l.__iter__()
 
-    def __len__(self):
+#    def __len__(self):
         return len(self.l)
+
+
+class s_f(keyed_object):
+
+    def get_introspection_key(self):
+        return '%s_%s' % ('s', self.ys_f.get_key())
+
+    def __init__(self, ys_f):
+        self.ys_f = ys_f
+
+    def __call__(self, pid):
+        return self.ys_f(pid)[0]
 
 class get_data_f(possibly_cached):
 
@@ -491,29 +517,32 @@ class get_data_f(possibly_cached):
     def location_f(self, pid_iterator):
         return '%s/%s/%s' % (data_home, 'data', self.get_key())
 
-    print_handler_f = staticmethod(write_diffcovs_data)
+    print_handler_f = staticmethod(folder_adapter(write_diffcovs_data))
 
     read_f = staticmethod(read_diffcovs_data)
 
     to_recalculate = False
 
+    @call_and_cache
+    @call_and_save
     def __call__(self, pid_iterator):
 
         l = []
 
         for pid in pid_iterator:
             try:
-                xa = get_feature_series(pid, x_abc_fs.xa_fs)
-                xb = get_feature_series(pid, x_abc_fs.xb_fs)
-                xc = get_feature_series(pid, x_abc_fs.xc_fs)
-                s = sf(pid)
-                ys = ys_f(pid)
-            except:
+                xa = get_feature_series(pid, self.x_abc_fs.xa_fs)
+                xb = get_feature_series(pid, self.x_abc_fs.xb_fs)
+                xc = get_feature_series(pid, self.x_abc_fs.xc_fs)
+                s = self.s_f(pid)
+                ys = self.ys_f(pid)
+            except Exception, e:
+                print e
                 pass
             else:
                 l.append(datum(pid, xa, xb, xc, s, ys))
         l = sorted(l, key = lambda x: x.pid)
-        return data(l)
+        return data(keyed_list(l))
                 
 class filtered_get_data_f(keyed_object):
 
@@ -601,18 +630,35 @@ related to x_abc_fs
 class get_dataframe_f(possibly_cached):
 
     def get_introspection_key(self):
-        return '%s_%s' % ('df', fs.get_key())
+        return '%s_%s' % ('df', self.fs.get_key())
+
+    def key_f(self, fs):
+        return '%s_%s' % (self.get_key(), fs.get_key())
+
+    def location_f(self, fs):
+        return './scratch'
+
+    print_handler_f = staticmethod(write_DataFrame)
+
+    read_f = staticmethod(read_DataFrame)
+
+    to_recalculate = True
 
     def __init__(self, fs):
         self.fs = fs
 
-    def __call__(self, pid_iterator):        
-        return pandas.DataFrame({pid:get_feature_series(pid, fs) for pid in pid_iterator})
+    @call_and_cache
+    @call_and_save
+    def __call__(self, pid_iterator):
+        """
+        get_dataframe_f __call__
+        """
+        return keyed_DataFrame({pid:get_feature_series(pid, self.fs) for pid in pid_iterator})
 
 class x_abc_fs(keyed_object):
 
     def get_introspection_key(self):
-        '%s_%s_%s_%s' % ('abc_f', xa_fs.get_key(), xb_fs.get_key(), xc_fs.get_key())
+        return '%s_%s_%s_%s' % ('abc_f', self.xa_fs.get_key(), self.xb_fs.get_key(), self.xc_fs.get_key())
 
     def __init__(self, xa_fs, xb_fs, xc_fs):
         self.xa_fs, self.xb_fs, self.xc_fs = xa_fs, xb_fs, xc_fs
@@ -641,6 +687,9 @@ class ys_f(keyed_object):
 
     function_names = {physical_condition:'physical_condition', mental_condition:'mental_condition', urinary_function:'urinary_function', urinary_bother:'urinary_bother', bowel_function:'bowel_function', bowel_bother:'bowel_bother', sexual_function:'sexual_function', sexual_bother:'sexual_bother'}
 
+    def get_introspection_key(self):
+        return '%s_%s' % ('ys', ys_f.function_names[self.which_function])
+
     def __init__(self, which_function):
         import pandas
         function_name = ys_f.function_names[which_function]
@@ -650,7 +699,6 @@ class ys_f(keyed_object):
 
     def __call__(self, pid):
         import pdb
-        pdb.set_trace()
         return self.dump[pid]
 
 
@@ -726,7 +774,7 @@ def train_logistic_model(X, Y):
     each patient is a column.  would like return object to be series whose index matches feature names
     """
     def obj_f(b):
-        error_vect = (X.T.dot(b)).apply(logistic) - Y)
+        error_vect = (X.T.dot(b)).apply(logistic) - Y
         return error_vect.dot(error_vect)
     import scipy.optimize
 
@@ -767,7 +815,7 @@ class equals_bin(object):
     def __init__(self, in_vals):
         self.in_vals = in_vals
 
-    def contains(self, obj):
+    def __contains__(self, obj):
         if obj in self.in_vals:
             return True
         else:

@@ -1,4 +1,40 @@
 from prostate_specifics import *
+from management_stuff import *
+
+import pdb
+
+pids = all_ucla_pid_iterator()
+
+xa_fs = keyed_list([ucla_cov_f(ucla_cov_f.age), bin_f(ucla_cov_f(ucla_cov_f.psa), bin(0,20)), s_f(ys_f(ys_f.sexual_function))])
+xb_fs = xa_fs
+xc_fs = xa_fs
+
+init = s_f(ys_f(ys_f.sexual_function))
+
+a_ys = ys_f(ys_f.sexual_function)
+
+gg=set_hard_coded_key_dec(x_abc_fs, 'feat')(xa_fs, xb_fs, xc_fs)
+
+
+#d = get_dataframe_f(xa_fs)(pids)
+
+#pdb.set_trace()
+
+#pdb.set_trace()
+
+#d = get_dataframe_f(xa_fs)(pids)
+
+#pdb.set_trace()
+
+data = get_data_f(gg, init, a_ys)(pids)
+
+pops = train_better_pops_f()(data)
+
+pdb.set_trace()
+
+
+
+pdb.set_trace()
 
 pids = [x for x in all_ucla_pid_iterator()]
 
