@@ -5,13 +5,17 @@ import pdb
 
 pids = all_ucla_pid_iterator()
 
+ucla_treatment_f()
+
+surgery_pids = filtered_pid_iterator(pids, bin_f(ucla_treatment_f(),equals_bin([ucla_treatment_f.surgery])))
+
 xa_fs = keyed_list([ucla_cov_f(ucla_cov_f.age), bin_f(ucla_cov_f(ucla_cov_f.psa), bin(0,20)), s_f(ys_f(ys_f.sexual_function))])
 xb_fs = xa_fs
 xc_fs = xa_fs
 
 init = s_f(ys_f(ys_f.sexual_function))
 
-a_ys = ys_f(ys_f.sexual_function)
+a_ys = modified_ys_f(ys_f(ys_f.sexual_function), score_modifier_f(0))
 
 gg=set_hard_coded_key_dec(x_abc_fs, 'feat')(xa_fs, xb_fs, xc_fs)
 
@@ -26,9 +30,15 @@ gg=set_hard_coded_key_dec(x_abc_fs, 'feat')(xa_fs, xb_fs, xc_fs)
 
 #pdb.set_trace()
 
-data = get_data_f(gg, init, a_ys)(pids)
+data = get_data_f(gg, init, a_ys)(surgery_pids)
 
-pops = train_better_pops_f()(data)
+pdb.set_trace()
+
+filtered_data = filtered_get_data_f()(data)
+
+pdb.set_trace()
+
+pops = train_better_pops_f()(filtered_data)
 
 pdb.set_trace()
 

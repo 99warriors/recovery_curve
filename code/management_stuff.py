@@ -74,7 +74,6 @@ class call_and_save(object):
         else:
             x = set_location_dec(set_hard_coded_key_dec(self.f, key), location)(inst, *args, **kwargs)
             if not os.path.exists(location):
-                pdb.set_trace()
                 os.makedirs(location)
             inst.print_handler_f(x, full_path)
         return x
@@ -186,6 +185,7 @@ def not_implemented_f(*args, **kwargs):
 class possibly_cached(keyed_object):
 
     def get_introspection_key(self):
+        print self
         raise NotImplementedError
 
     def key_f(self, *args, **kwargs):

@@ -117,6 +117,19 @@ class all_ucla_pid_iterator(keyed_object):
     def __iter__(self):
         return iter(self.pids)
 
+class filtered_pid_iterator(keyed_object):
+
+    def get_introspection_key(self):
+        return '%s_%s_%s' % ('filtered_iter', self.backing_iterator.get_key(), self.bool_f.get_key())
+
+    def __init__(self, backing_iterator, bool_f):
+        self.backing_iterator, self.bool_f = backing_iterator, bool_f
+
+    def __iter__(self):
+        for pid in self.backing_iterator:
+            if self.bool_f(pid):
+                yield pid
+
 """
 features
 """
@@ -135,6 +148,25 @@ class feat(keyed_object):
         except AttributeError:
             other_key = str(other)
         return self.get_key() == other_key
+
+class ucla_treatment_f(feat):
+
+    surgery, radiation, brachy = 1,2,3
+
+    treatment_names = {surgery:'surg', radiation:'rad', brachy:'brachy'}
+
+    def get_introspection_key(self):
+        return 'treat_f'
+
+    def __call__(self, pid):
+        first = pid[0]
+        if first == '1':
+            return ucla_treatment_f.surgery
+        elif first == '2':
+            return ucla_treatment_f.radiation
+        elif first == '3':
+            return ucla_treatment_f.brachy
+        assert False
 
 class ucla_cov_f(feat):
 
@@ -171,6 +203,9 @@ predictor factories(Aka trainers) and predictor class definitions
 
 
 class pops(keyed_object):
+
+    def __repr__(self):
+        return '%.2f, %.2f, %.2f' % (self.pop_a, self.pop_b, self.pop_c)
 
     def __init__(self, pop_a, pop_b, pop_c):
         self.pop_a, self.pop_b, self.pop_c = pop_a, pop_b, pop_c
@@ -210,13 +245,25 @@ class train_better_pops_f(possibly_cached):
         """
         averages curves, and then fits a curve to it
         """
+        
         def obj_f(x):
             a,b,c = x[0],x[1],x[2]
             error = 0.0
             for datum in data:
+                fit_f = functools.partial(the_f, s=datum.s, a=a, b=b, c=c)
+                fitted = pandas.Series(datum.ys.index).apply(fit_f)
+                diff_vect = (fitted - datum.ys).dropna()
+                this = diff_vect.dot(diff_vect)
+                error += this
+                """
                 for t,v in datum.ys.iteritems():
                     fitted_val = the_f(t,datum.s,a,b,c)
                     error = error + pow(fitted_val - v, 2)
+                    if np.isnan(error):
+                        pdb.set_trace()
+                    print pow(fitted_val - v, 2), error
+                """
+            print error
             return error
 
         import scipy.optimize
@@ -547,30 +594,43 @@ class get_data_f(possibly_cached):
 class filtered_get_data_f(keyed_object):
 
     def get_introspection_key(self):
-        return '%s_%s_%s' % 'filtered_data', self.filtering_f.get_key(), self.get_data_f.get_key()
+        return 'filtered'
 
-    def key_f(self):
-        return '%s_%s' % (self.get_key(), id_iterator.get_key())
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
 
-    def location_f(self, id_iterator):
-        return '%s/%s/%s' % (data_home, 'data', self.get_key())
+    def location_f(self, data):
+        return '%s/%s/%s' % (data_home, 'filtered_data', data.get_key())
 
-    print_handler_f = staticmethod(write_diffcovs_data)
+    print_handler_f = staticmethod(folder_adapter(write_diffcovs_data))
 
     read_f = staticmethod(read_diffcovs_data)
 
     to_recalculate = False
 
-    def __init__(self, filtering_f, get_data_f):
-        self.filtering_f, self.get_data_f = filtering_f, get_data_f
+    @call_and_cache
+    @call_and_save
+    def __call__(self, _data):
+        def is_ok(datum):
+            try:
+                if sum([x > (datum.s + 0.05) for x in datum.ys]) >= 2:
+                    raise Exception
+                a,b,c = get_curve_abc(datum.s, datum.ys)
+                error = 0.0
+                for t,v in datum.ys.iteritems():
+                    fit_val = the_f(t, datum.s, a, b, c)
+                    error += abs(fit_val - v)
+                if error / sum(datum.ys.notnull()) > 0.08:
+                    raise Exception
+                if sum(datum.ys.notnull()) < 8:
+                    raise Exception
+                
+            except Exception:
+                return False
+            else:
+                return True
+        return data(filter(is_ok, _data))
 
-    def __call__(self, id_iterator):
-        l = self.get_data_f(id_iterator)
-        filtered_l = []
-        for d in l:
-            if filtering_f(d):
-                filtered_l.append(d)
-        return filtered_l
             
 
 
@@ -672,14 +732,30 @@ related to ys_f, as in getting the series
 
 class score_modifier_f(keyed_object):
 
-    def get_instrospection_key(self):
-        return '%s_%.2f' % ('upscaled', c)
+    def get_introspection_key(self):
+        return '%s_%.2f' % ('upscaled', self.c)
 
     def __init__(self, c):
         self.c = c
 
     def __call__(self, s):
-        return (s+c) / (1+c)
+        return (s+self.c) / (1.0+self.c)
+
+
+class modified_ys_f(possibly_cached):
+
+    def get_introspection_key(self):
+        return '%s_%s_%s' % ('mod_ys', self.ys_f.get_key(), self.score_modifier_f.get_key())
+
+    def __init__(self, ys_f, score_modifier_f):
+        self.ys_f, self.score_modifier_f = ys_f, score_modifier_f
+
+    def __call__(self, pid):
+        raw = self.ys_f(pid)
+        scaled = raw.apply(self.score_modifier_f)
+        ans = scaled[scaled.index != 0]
+        return pandas.Series({k-1:v for k,v in ans.iteritems()})
+        return ans
 
 class ys_f(keyed_object):
 
@@ -743,7 +819,7 @@ def get_curve_abc(s, curve):
         error = 0.0
         for time, value in curve.iteritems():
             if not np.isnan(value):
-                error += pow(_f(time, s, x[0], x[1], x[2]) - value, 2)
+                error += pow(the_f(time, s, x[0], x[1], x[2]) - value, 2)
         return error
     x, f, d = scipy.optimize.fmin_l_bfgs_b(obj_f, np.array([0.5, 0.5, 2.0]), approx_grad = True, bounds = [(0.00,1.0),[0.00,1.0],[0.01,None]])
     return x
