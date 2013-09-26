@@ -5,6 +5,7 @@ functions involved in using convert_to_print_form_functions, get_file_location_f
 import os
 import pdb
 import functools
+import numpy as np
 
 class print_adapter(object):
     """
@@ -69,7 +70,6 @@ class call_and_save(object):
         location = inst.location_f(*args, **kwargs)
         key = inst.key_f(*args, **kwargs)
         full_path = '%s/%s' % (location, key)
-        print len(full_path), full_path, 
         if os.path.exists(full_path) and not inst.to_recalculate:
             x = set_location_dec(set_hard_coded_key_dec(inst.read_f, key), location)(full_path)
         else:
@@ -81,10 +81,6 @@ class call_and_save(object):
 
     def __get__(self, inst, cls):
         return functools.partial(self, inst)
-        pdb.set_trace()
-        self.inst = inst
-        self.cls = cls
-        return self.__call__
 
 class call_and_key(object):
     """
@@ -98,9 +94,6 @@ class call_and_key(object):
         return set_hard_coded_key_dec(self.f, key)(inst, *args, **kwargs)
 
     def __get__(self, inst, cls):
-        #self.inst = inst
-        #self.cls = cls
-        #return self.__call__
         return functools.partial(self, inst)
 
 class call_and_cache(object):
@@ -118,15 +111,17 @@ class call_and_cache(object):
         key = inst.key_f(*args, **kwargs)
         try:
             x = self.cache[key]
+            try:
+                x.set_hard_coded_key(key)
+            except AttributeError:
+                pass
             print 'FOUND'
         except KeyError:
             x = set_hard_coded_key_dec(self.f, key)(inst, *args, **kwargs)
-            #x = self.f(inst, *args, **kwargs)
             self.cache[key] = x
-            return x
+        return x
 
     def __get__(self, inst, cls):
-
         return functools.partial(self, inst)
 
 class save_object(object):
@@ -144,6 +139,21 @@ class save_object(object):
             x.print_handler_f(x, full_path)
         
 
+class raise_if_na(object):
+    """
+    class method decorator that raises exception if return value isnan
+    """
+    def __init__(self, f):
+        self.f = f
+
+    def __call__(self, inst, *args, **kwargs):
+        ans = self.f(inst, *args, **kwargs)
+        if np.isnan(ans):
+            raise Exception
+        return ans
+
+    def __get__(self, inst, cls):
+        return functools.partial(self, inst)
 
 
 class keyed_object(object):

@@ -137,7 +137,12 @@ class filtered_pid_iterator(keyed_object):
 
     def __iter__(self):
         for pid in self.backing_iterator:
-            if self.bool_f(pid):
+            try:
+                if not self.bool_f(pid):
+                    raise Exception
+            except Exception:
+                pass
+            else:
                 yield pid
 
 """
@@ -159,6 +164,14 @@ class feat(keyed_object):
             other_key = str(other)
         return self.get_key() == other_key
 
+class ones_f(keyed_object):
+
+    def get_introspection_key(self):
+        return 'ones_f'
+
+    def __call__(self, pid):
+        return 1
+
 class ucla_treatment_f(feat):
 
     surgery, radiation, brachy = 1,2,3
@@ -167,7 +180,8 @@ class ucla_treatment_f(feat):
 
     def get_introspection_key(self):
         return 'treat_f'
-
+        
+    @raise_if_na
     def __call__(self, pid):
         first = pid[0]
         if first == '1':
@@ -191,6 +205,7 @@ class ucla_cov_f(feat):
         self.which_cov = which_cov
         self.all_covs = pandas.read_csv(xs_file, index_col=0)
 
+    @raise_if_na
     def __call__(self, pid):
         return self.all_covs[pid][ucla_cov_f.cov_names[self.which_cov]]
 
@@ -202,6 +217,7 @@ class bin_f(feat):
     def __init__(self, backing_f, bin):
         self.backing_f, self.bin = backing_f, bin
 
+    @raise_if_na
     def __call__(self, pid):
         raw = self.backing_f(pid)
         return int(raw in self.bin)
@@ -294,6 +310,10 @@ class prior_predictor(keyed_object):
 
 
 class get_prior_predictor_f(possibly_cached):
+
+    display_color = 'red'
+
+    display_name = 'prior'
 
     def get_introspection_key(self):
         return '%s_%s' % ('prior_predictor_factory', self.get_pops_f.get_key())
@@ -405,6 +425,10 @@ class logreg_predictor(keyed_object):
     """
     
     """
+
+    def __repr__(self):
+        return 'logreg'
+
     def get_introspection_key(self):
         return 'logreg_predictor'
 
@@ -412,12 +436,16 @@ class logreg_predictor(keyed_object):
         self.params = params
 
     def __call__(self, datum, time):
-        pass
+        return logistic(self.params[time].dot(datum.xa))
 
 class get_logreg_predictor_f(possibly_cached):
     """
     returns trained logreg predictor
     """
+    display_color = 'blue'
+
+    display_name = 'logreg'
+
     def get_introspection_key(self):
         return 'logreg_factory'
 
@@ -427,14 +455,15 @@ class get_logreg_predictor_f(possibly_cached):
     def __init__(self, times):
         self.times = times
 
-    def __call__(self, data):
+    def __call__(self, _data):
         """
         for now, use only xa for prediction
         """
         Bs = {}
-        xas = pandas.DataFrame({datum.pid:datum.xa for datum in data})
+        pdb.set_trace()
+        xas = pandas.DataFrame({datum.pid:datum.xa for datum in _data})
         for time in self.times:
-            y = {datum:datum.ys[time]}
+            y = pandas.Series({datum.pid:datum.ys[time] for datum in _data})
             y = y[y.notnull()]
             this_xas = xas[y.index]
             Bs[time] = train_logistic_model(this_xas, y)
@@ -472,6 +501,7 @@ class cross_validated_scores_f(possibly_cached):
         for i in range(self.fold_k):
             train_data = get_data_fold_training(i, self.fold_k)(data)
             test_data = get_data_fold_testing(i, self.fold_k)(data)
+            pdb.set_trace()
             predictor = self.get_predictor_f(train_data)
             fold_scores.append(pandas.DataFrame({datum.pid:{time:predictor(datum, time) for time in self.times} for datum in test_data}))
         return keyed_DataFrame(pandas.concat(fold_scores, axis=1))
@@ -498,12 +528,12 @@ class performance_series_f(possibly_cached):
     def __call__(self, data):
         # have raw scores for each patient
         scores = self.scores_getter_f(data)
+        pdb.set_trace()
         true_ys = pandas.DataFrame({datum.pid:datum.ys for datum in data})
         diff = (scores - true_ys).abs()
         losses = diff.apply(self.loss_f, axis=1)
         mean_losses = losses.apply(np.mean, axis=1)
         loss_percentiles = losses.apply(functools.partial(get_percentiles, percentiles=self.percentiles), axis=1)
-        pdb.set_trace()
         loss_percentiles['mean'] = mean_losses
         return keyed_DataFrame(loss_percentiles)
         
@@ -557,6 +587,7 @@ class s_f(keyed_object):
     def __init__(self, ys_f):
         self.ys_f = ys_f
 
+    @raise_if_na
     def __call__(self, pid):
         return self.ys_f(pid)[0]
 
@@ -578,7 +609,7 @@ class get_data_f(possibly_cached):
 
     read_f = staticmethod(read_diffcovs_data)
 
-    to_recalculate = True
+    to_recalculate = False
 
     @call_and_cache
     @call_and_save
@@ -690,7 +721,7 @@ class get_data_fold_testing(possibly_cached):
     def __init__(self, fold_i, fold_k):
         self.fold_i, self.fold_k = fold_i, fold_k
 
-    @call_and_cache
+    #@call_and_cache
     def __call__(self, _data):
         return data([datum for datum,i in zip(_data, range(len(_data))) if i%self.fold_k == self.fold_i])
             
@@ -838,6 +869,16 @@ class aggregate_curve_f(possibly_cached):
 helpers
 """
 
+def add_performances_to_ax(ax, perfs, color, name):
+    add_series_to_ax(perfs['mean'], ax, color, name, 'dashed')
+    percentiles = perfs[[x for x in perfs.columns if x != 'mean']]
+    fixed = functools.partial(add_series_to_ax, ax=ax, color=color, label=name, linestyle='solid')
+    percentiles.apply(fixed, axis=0)
+    return ax
+
+def add_series_to_ax(s, ax, color, label, linestyle):
+    ax.plot(s.index, s, color=color, ls=linestyle, label=label)
+
 def the_f(t, s, a, b, c):
     return s * ( (1.0-a) - (1.0-a)*(b) * math.exp(-1.0*t/c))
 
@@ -892,7 +933,7 @@ def train_logistic_model(X, Y):
         return error_vect.dot(error_vect)
     import scipy.optimize
 
-    ans, f, d = scipy.optimize.fmin_l_bfgs_b(obj_f, np.zeros(len(Y)), approx_grad = True)
+    ans, f, d = scipy.optimize.fmin_l_bfgs_b(obj_f, np.zeros(X.shape[0]), approx_grad = True)
     return pandas.Series(ans, index=X.index)
 
 def get_feature_series(pid, fs):

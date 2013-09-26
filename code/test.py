@@ -1,47 +1,45 @@
 from prostate_specifics import *
 from management_stuff import *
+import matplotlib.pyplot as plt
 
 import pdb
 
 pids = all_ucla_pid_iterator()
-
-ucla_treatment_f()
-
 surgery_pids = filtered_pid_iterator(pids, bin_f(ucla_treatment_f(),equals_bin([ucla_treatment_f.surgery])))
 
-xa_fs = keyed_list([ucla_cov_f(ucla_cov_f.age), bin_f(ucla_cov_f(ucla_cov_f.psa), bin(0,20)), s_f(ys_f(ys_f.sexual_function))])
+xa_fs = keyed_list([ucla_cov_f(ucla_cov_f.age), bin_f(ucla_cov_f(ucla_cov_f.psa), bin(0,20)), s_f(ys_f(ys_f.sexual_function)), ones_f()])
 xb_fs = xa_fs
 xc_fs = xa_fs
 
 init = s_f(ys_f(ys_f.sexual_function))
-
 a_ys = modified_ys_f(ys_f(ys_f.sexual_function), score_modifier_f(0))
 
 gg=set_hard_coded_key_dec(x_abc_fs, 'feat')(xa_fs, xb_fs, xc_fs)
 
-
-#d = get_dataframe_f(xa_fs)(pids)
-
-#pdb.set_trace()
-
-#pdb.set_trace()
-
-#d = get_dataframe_f(xa_fs)(pids)
-
-#pdb.set_trace()
-
 data = get_data_f(gg, init, a_ys)(surgery_pids)
-
-pdb.set_trace()
-
 filtered_data = filtered_get_data_f()(data)
 
-trainer = get_prior_predictor_f(train_better_pops_f())
 
-crosser = cross_validated_scores_f(trainer, 3, times)
+prior_trainer = get_prior_predictor_f(train_better_pops_f())
 
-performance_series_f(crosser, scaled_logistic_loss_f(10), percentiles)(filtered_data)
+logreg_trainer = get_logreg_predictor_f(times)
 
+
+trainers = [prior_trainer, logreg_trainer]
+#trainers = [logreg_trainer]
+performances = {}
+
+fig = plt.figure()
+ax = fig.add_subplot(1,1,1)
+
+for trainer in trainers:
+    crosser = cross_validated_scores_f(trainer, 3, times)
+    perfs = performance_series_f(crosser, scaled_logistic_loss_f(10), percentiles)(filtered_data)
+    add_performances_to_ax(ax, perfs, trainer.display_color, trainer.display_name)
+
+ax.legend()
+fig.show()
+pdb.set_trace()
 
 scores = crosser(filtered_data)
 
