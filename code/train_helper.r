@@ -1,3 +1,5 @@
+library(functional)
+
 read_in_pops <- function(file){
   d <- read.csv(file, header=F)
   return(list(pop_a=d[1,1], pop_b=d[1,2], pop_c=d[1,3]))
@@ -11,7 +13,14 @@ read_in_hypers <- function(file){
 # function that takes in pid and returns long thin vector of its times/values
 get_tvs_given_folder <- function(pid, folder){
     file <- paste(folder,'/',pid,sep='')
-    return(read.csv(file,header=F))
+    #print(file)
+    #print(folder)
+    #print(pid)
+    #print('ZZZZZ')
+    ans <- read.csv(file,header=F)
+    ans <- ans[complete.cases(ans),]
+    #print(ans)
+    return(ans)
 }
 
 # function that takes in a pid, and returns a vector of its covariates
@@ -31,27 +40,37 @@ get_tv_length <- function(pid, get_tvs_f){
 
 # reads data stuff besdies hyperparams and pops
 get_real_full_data_diffcovs <- function(folder_path){
-    ss_file <- paste(folder_path,'ss.csv',sep='')		
+    ss_file <- paste(folder_path,'ss.csv',sep='/')		
     ss <- read.csv(ss_file,header=F,row.names=1)[,1]
 	
-    xas_file <- paste(folder_path,'xas.csv',sep='')	
-    xas <- read.csv(xs_file_a,header=T,row.names=1)
+    xas_file <- paste(folder_path,'xas.csv',sep='/')
+    print('xas')
+    print(xas_file)	
+    xas <- read.csv(xas_file,header=T,row.names=1)
 
-    xas_file <- paste(folder_path,'xbs.csv',sep='')	
+    xbs_file <- paste(folder_path,'xbs.csv',sep='/')
+    print('xbs')
+    print(xbs_file)		
     xbs <- read.csv(xbs_file,header=T,row.names=1)
 
-    xcs_file <- paste(folder_path,'xas.csv',sep='')	
+    xcs_file <- paste(folder_path,'xcs.csv',sep='/')	
+    print('xcs')
+    print(xcs_file)	
     xcs <- read.csv(xcs_file,header=T,row.names=1)
 			    
-    pids_file <- paste(folder_path, 'pids.csv',sep='')
-    pids <- read.csv(pids_file, header=F)
+    pids_file <- paste(folder_path, 'pids.csv',sep='/')
+    print('pids')
+    print(pids_file)	
+    pids <- read.csv(pids_file, header=F)[,1]
+    print(pids)
+    print('after')
 
-    get_x_by_pid <- Curry(get_x_by_pid_given_xs, xs=xs_a)
-    get_tvs <- Curry(get_tvs_given_folder, folder=paste(folder_path,'/','da	tapoints',sep=''))
+    #get_x_by_pid <- Curry(get_x_by_pid_given_xs, xs=xs_a)
+    get_tvs <- Curry(get_tvs_given_folder, folder=paste(folder_path,'/','datapoints',sep=''))
     tvs <- cbind_apply(pids, get_tvs)
     tv_lengths <- sapply(pids, Curry(get_tv_length, get_tvs_f=get_tvs))
 
-    data <- list(ls=tv_lengths,ts=tvs[,1],vs=tvs[,2],xas=xas,xbs=xbs,xcs=xcs,ss=ss,N=dim(xs_a)[1],K_A=dim(xas)[2],K_B=dim(xbs)[2],K_C=dim(xcs)[2],L=dim(tvs)[1])
+    data <- list(ls=tv_lengths,ts=tvs[,1],vs=tvs[,2],xas=xas,xbs=xbs,xcs=xcs,ss=ss,N=dim(xas)[1],K_A=dim(xas)[2],K_B=dim(xbs)[2],K_C=dim(xcs)[2],L=dim(tvs)[1])
 
     return(data)
 

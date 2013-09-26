@@ -1,7 +1,7 @@
 
 
 data_home = './scratch'
-train_diffcovs_r_script = ''
+train_diffcovs_r_script = './train_diffcovs_model.r'
 xs_file = '../raw_data/xs.csv'
 ys_folder = '../raw_data/series'
 all_pid_file = '../raw_data/pids.csv'
@@ -50,6 +50,13 @@ def read_diffcovs_data(folder):
         l.append(datum(pid, xa[1], xb[1], xc[1], s, p_ys))
     return data(l)
 
+def hypers_read_f(full_path):
+    f = open(full_path, 'r')
+    a = [x for x in f.readline().strip().split(',')]
+    f = open(full_path, 'r')
+    c_a,c_b,c_c,l_a,l_b,l_c,l_m = [float(x) for x in f.readline().strip().split(',')]
+    return hypers(c_a,c_b,c_c,l_a,l_b,l_c,l_m)
+
 def read_DataFrame(full_path):
     return keyed_DataFrame(pandas.read_csv(full_path, index_col=0, header=0))
 
@@ -86,7 +93,7 @@ def write_diffcovs_data(d, folder):
         p.ys.to_csv(p_ys_file, header=False, index=True)
 
 def hypers_print_f(h):
-    return '%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,' % (h.c_a,h.c_b,h.c_c,h.l_a,h.l_b,h.l_c,h.l_m)
+    return '%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f' % (h.c_a,h.c_b,h.c_c,h.l_a,h.l_b,h.l_c,h.l_m)
 
 def write_DataFrame(df, full_path):
     df.to_csv(full_path, header=True, index=True)
@@ -130,7 +137,7 @@ class all_ucla_pid_iterator(keyed_object):
 class filtered_pid_iterator(keyed_object):
 
     def get_introspection_key(self):
-        return '%s_%s_%s' % ('filtered_iter', self.backing_iterator.get_key(), self.bool_f.get_key())
+        return '%s_%s_%s' % ('ftit', self.backing_iterator.get_key(), self.bool_f.get_key())
 
     def __init__(self, backing_iterator, bool_f):
         self.backing_iterator, self.bool_f = backing_iterator, bool_f
@@ -238,13 +245,14 @@ class pops(keyed_object):
 
     @staticmethod
     def print_f(x):
-        return '%.4f, %.4f, %.f4' % (self.pop_a, self.pop_b, self.pop_c)
+        return '%.4f, %.4f, %.f4' % (x.pop_a, x.pop_b, x.pop_c)
 
     @staticmethod
     def read_f(full_path):
         f = open(full_path,'r')
         raw = f.readline().strip().split(',')
-        return pops(raw[0], raw[1], raw[2])
+        return pops(float(raw[0]), float(raw[1]), float(raw[2]))
+
 
 class train_better_pops_f(possibly_cached):
     """
@@ -252,7 +260,7 @@ class train_better_pops_f(possibly_cached):
     """
     
     def get_introspection_key(self):
-        return 'train_better_pops'
+        return 'betpops'
 
     def key_f(self, data):
         return '%s_%s' % (self.get_key(), data.get_key())
@@ -266,7 +274,8 @@ class train_better_pops_f(possibly_cached):
 
     to_recalculate = False
 
-    @call_and_key
+    @call_and_cache
+    @call_and_save
     def __call__(self, data):
         """
         averages curves, and then fits a curve to it
@@ -300,7 +309,7 @@ class train_better_pops_f(possibly_cached):
 class prior_predictor(keyed_object):
 
     def get_introspection_key(self):
-        return '%s_%s' % 'prior_predictor', self.pops.get_key()
+        return '%s_%s' % 'priorpred', self.pops.get_key()
 
     def __init__(self, pops):
         self.pops = pops
@@ -316,7 +325,7 @@ class get_prior_predictor_f(possibly_cached):
     display_name = 'prior'
 
     def get_introspection_key(self):
-        return '%s_%s' % ('prior_predictor_factory', self.get_pops_f.get_key())
+        return '%s_%s' % ('priorpred-f', self.get_pops_f.get_key())
 
     def key_f(self, data):
         return '%s_%s' % (self.get_key(), data.get_key())
@@ -336,13 +345,13 @@ class get_diffcovs_posterior_f(possibly_cached):
     """
     
     def get_introspection_key(self):
-        return '%s_%s_%s_%d_%d_%d', ('diffcovs', self.get_pops_f.get_key(), self.hypers.get_key(), self.iters, self.chains, self.seed)
+        return '%s_%s_%s_%d_%d_%d' % ('diffcovs', self.get_pops_f.get_key(), self.hypers.get_key(), self.iters, self.chains, self.seed)
         
     def key_f(self, data):
         return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        return '%s/%s/%' % (data.get_location(), 'trained_diffcovs', self.get_pops_f.get_key())
+        return '%s/%s/%s' % (data.get_location(), 'trained_diffcovs', self.get_pops_f.get_key())
 
     print_handler_f = staticmethod(do_nothing_adapter)
 
@@ -355,17 +364,18 @@ class get_diffcovs_posterior_f(possibly_cached):
         self.get_pops_f, self.hypers, self.iters, self.chains, self.seed = get_pops_f, hypers, iters, chains, seed
 
     def __call__(self, data):
-        pops = call_and_save(self.get_pops_f)(data)
-        pops_path = pops.get_full_path()
+        pops = self.get_pops_f.call_and_save(data)
+        pops_path = self.get_pops_f.full_path_f(data)
+        data.get_creator().save(data)
         data_path = data.get_full_path()
-        save_object()(self.hypers)
-        hypers_path = self.hypers.get_full_path()
-        save_path = self.full_path_f(data, hypers, iters, chains)
+        hypers_save_f()(self.hypers)
+        hypers_path = hypers_save_f().full_path_f(self.hypers)
+        save_path = self.full_path_f(data)
         make_folder(save_path)
         import subprocess
-        cmd = '%s %s %s %s %d %d %d %s' % (self.r_script, pops_path, data_path, hypers_path, self.iters, self.chains, self.seed, save_path)
+        cmd = '%s %s %s %s %s %d %d %d %s' % ('Rscript', self.r_script, pops_path, data_path, hypers_path, self.iters, self.chains, self.seed, save_path)
         subprocess.call(cmd, shell=True)
-        return train_diffcovs_model.read_f(save_path)
+        return self.read_f(save_path)
 
 
 class full_model_point_predictor(keyed_object):
@@ -373,7 +383,7 @@ class full_model_point_predictor(keyed_object):
     given point estimates of posterior params, does prediction
     """
     def get_introspection_key(self):
-        return '%s_%s_%s' % ('full_predictor', self.params.get_key(), self.pops.get_key())
+        return '%s_%s_%s' % ('full_pred', self.params.get_key(), self.pops.get_key())
 
     def __init__(self, params, pops):
         self.params, self.pops = params, pops
@@ -390,17 +400,12 @@ class get_param_mean_f(possibly_cached):
     returns dictionary of mean params
     """
     def get_introspection_key(self):
-        return '%s_%s' % ('mean_post_params', self.train_model_f.get_key())
+        return 'param_mean'
 
-    def key_f(self, data):
-        return '%s_%s' % (self.get_key(), data.get_key())
+    def key_f(self, post_param):
+        return '%s_%s' % (self.get_key(), post_param.get_key())
 
-    def __init__(self, train_model_f):
-        self.train_model_f = train_model_f
-
-    def __call__(self, data):
-        post_params = call_and_save(self.train_model_f(data))
-        import numpy as np
+    def __call__(self, post_params):
         return keyed_dict({p:np.mean(p) for p in post_params})
         
 
@@ -409,7 +414,7 @@ class get_diffcovs_point_predictor_f(possibly_cached):
     return trained object that makes point predictions
     """
     def get_introspection_key(self):
-        return '%s_%s_%s' % ('full_predictor_factory', self.get_diffcovs_posterior_f.get_key(), self.summarize_posterior_f.get_key())
+        return '%s_%s_%s' % ('fullpred_f', self.get_diffcovs_posterior_f.get_key(), self.summarize_posterior_f.get_key())
 
     def key_f(self, data):
         return '%s_%s' % (self.get_key(), data.get_key())
@@ -420,6 +425,9 @@ class get_diffcovs_point_predictor_f(possibly_cached):
     def __call__(self, data):
         posteriors = self.get_diffcovs_posterior_f(data)
         params = self.summarize_posterior_f(posteriors)
+        # assuming that get_diffcovs_posterior_f has a get_pops_f attribute i can call
+        pops = self.get_diffcovs_posterior_f.get_pops_f(data)
+        return full_model_point_predictor(params, pops)
 
 class logreg_predictor(keyed_object):
     """
@@ -430,7 +438,7 @@ class logreg_predictor(keyed_object):
         return 'logreg'
 
     def get_introspection_key(self):
-        return 'logreg_predictor'
+        return 'log_pred'
 
     def __init__(self, params):
         self.params = params
@@ -447,7 +455,7 @@ class get_logreg_predictor_f(possibly_cached):
     display_name = 'logreg'
 
     def get_introspection_key(self):
-        return 'logreg_factory'
+        return 'logpred_f'
 
     def key_f(self, data):
         return '%s_%s' % (self.get_key(), data.get_key())
@@ -509,7 +517,7 @@ class cross_validated_scores_f(possibly_cached):
 class scaled_logistic_loss_f(keyed_object):
 
     def get_introspection_key(self):
-        return '%s_%.2f' % ('logistic_loss', self.c)
+        return '%s_%.2f' % ('logloss', self.c)
 
     def __init__(self, c):
         self.c = c
@@ -565,19 +573,8 @@ class datum(keyed_object):
 
 class data(keyed_list):
 
-#    def __init__(self, l):
-#        self.l = l
-
     def get_introspection_key(self):
         return 'data'
-        #return '%s_%s' % ('data', self.l.get_key())
-
-#    def __iter__(self):
-        return self.l.__iter__()
-
-#    def __len__(self):
-        return len(self.l)
-
 
 class s_f(keyed_object):
 
@@ -635,7 +632,7 @@ class get_data_f(possibly_cached):
 class filtered_get_data_f(keyed_object):
 
     def get_introspection_key(self):
-        return 'filtered'
+        return 'filt'
 
     def key_f(self, data):
         return '%s_%s' % (self.get_key(), data.get_key())
@@ -678,7 +675,7 @@ class filtered_get_data_f(keyed_object):
 class get_data_fold_training(possibly_cached):
 
     def get_introspection_key(self):
-        return '%s_%d_%d' % ('training_fold', self.fold_i, self.fold_k)
+        return '%s_%d_%d' % ('trfld', self.fold_i, self.fold_k)
 
     def key_f(self, data):
         return '%s_%s' % (self.get_key(), data.get_key())
@@ -686,7 +683,7 @@ class get_data_fold_training(possibly_cached):
     def location_f(self, data):
         return '%s/%s_%d_%d' % (data.get_location(), 'training', self.fold_i, self.fold_k)
 
-    print_handler_f = staticmethod(write_diffcovs_data)
+    print_handler_f = staticmethod(folder_adapter(write_diffcovs_data))
 
     read_f = staticmethod(read_diffcovs_data)
 
@@ -704,7 +701,7 @@ class get_data_fold_training(possibly_cached):
 class get_data_fold_testing(possibly_cached):
 
     def get_introspection_key(self):
-        return '%s_%d_%d' % ('testing_fold', self.fold_i, self.fold_k)
+        return '%s_%d_%d' % ('tefld', self.fold_i, self.fold_k)
 
     def key_f(self, data):
         return '%s_%s' % (self.get_key(), data.get_key())
@@ -712,7 +709,7 @@ class get_data_fold_testing(possibly_cached):
     def location_f(self, data):
         return '%s/%s_%d_%d' % (data.get_location(), 'testing', self.fold_i, self.fold_k)
 
-    print_handler_f = staticmethod(write_diffcovs_data)
+    print_handler_f = staticmethod(folder_adapter(write_diffcovs_data))
 
     read_f = staticmethod(read_diffcovs_data)
 
@@ -721,7 +718,7 @@ class get_data_fold_testing(possibly_cached):
     def __init__(self, fold_i, fold_k):
         self.fold_i, self.fold_k = fold_i, fold_k
 
-    #@call_and_cache
+    @call_and_cache
     def __call__(self, _data):
         return data([datum for datum,i in zip(_data, range(len(_data))) if i%self.fold_k == self.fold_i])
             
@@ -751,12 +748,19 @@ class get_dataframe_f(possibly_cached):
         self.fs = fs
 
     @call_and_cache
-    @call_and_save
+    @call_and_cache
     def __call__(self, pid_iterator):
         """
         get_dataframe_f __call__
         """
-        return keyed_DataFrame({pid:get_feature_series(pid, self.fs) for pid in pid_iterator})
+        d = {}
+        for pid in pid_iterator:
+            try:
+                d[pid] = get_feature_series(pid, self.fs)
+            except Exception:
+                pass
+        return keyed_DataFrame(d)
+
 
 class x_abc_fs(keyed_object):
 
@@ -776,7 +780,7 @@ related to ys_f, as in getting the series
 class score_modifier_f(keyed_object):
 
     def get_introspection_key(self):
-        return '%s_%.2f' % ('upscaled', self.c)
+        return '%s_%.2f' % ('up', self.c)
 
     def __init__(self, c):
         self.c = c
@@ -788,7 +792,7 @@ class score_modifier_f(keyed_object):
 class modified_ys_f(possibly_cached):
 
     def get_introspection_key(self):
-        return '%s_%s_%s' % ('mod_ys', self.ys_f.get_key(), self.score_modifier_f.get_key())
+        return '%s_%s_%s' % ('modys', self.ys_f.get_key(), self.score_modifier_f.get_key())
 
     def __init__(self, ys_f, score_modifier_f):
         self.ys_f, self.score_modifier_f = ys_f, score_modifier_f
@@ -804,7 +808,7 @@ class ys_f(keyed_object):
 
     physical_condition, mental_condition, urinary_function, urinary_bother, bowel_function, bowel_bother, sexual_function, sexual_bother = 2,3,4,5,6,7,8,9
 
-    function_names = {physical_condition:'physical_condition', mental_condition:'mental_condition', urinary_function:'urinary_function', urinary_bother:'urinary_bother', bowel_function:'bowel_function', bowel_bother:'bowel_bother', sexual_function:'sexual_function', sexual_bother:'sexual_bother'}
+    function_names = {physical_condition:'physical_condition', mental_condition:'mental_condition', urinary_function:'urinary_function', urinary_bother:'urinary_bother', bowel_function:'bowel_function', bowel_bother:'bowel_bother', sexual_function:'sex', sexual_bother:'sexual_bother'}
 
     def get_introspection_key(self):
         return '%s_%s' % ('ys', ys_f.function_names[self.which_function])
@@ -828,16 +832,26 @@ class hypers(keyed_object):
     """
     key is hard coded
     """
-    def __init__(self, c_a, c_b, c_c, l_a, l_b, l_c, l_m, key):
+    def get_introspection_key(self):
+        return 'hyps'
+
+    def __init__(self, c_a, c_b, c_c, l_a, l_b, l_c, l_m):
         self.c_a, self.c_b, self.c_c, self.l_a, self.l_b, self.l_c, self.l_m = c_a, c_b, c_c, l_a, l_b, l_c, l_m
-        self.key = key
+
+
+class hypers_save_f(save_factory_base):
+    """
+    only purpose is to save hypers
+    """
         
-    def get_location(self):
+    def location_f(self, item):
         return '%s/%s' % (data_home, 'hypers')
 
     print_handler_f = staticmethod(string_adapter(hypers_print_f))
 
-    to_recalculate = False
+    read_f = staticmethod(hypers_read_f)
+
+    to_recalculate = True
 
 """
 related to plotting

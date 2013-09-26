@@ -4,12 +4,21 @@ import matplotlib.pyplot as plt
 
 import pdb
 
+h = hypers(1,1,1,15,15,15,10)
+
+#h = hypers_save_f()(h)
+
+
 pids = all_ucla_pid_iterator()
 surgery_pids = filtered_pid_iterator(pids, bin_f(ucla_treatment_f(),equals_bin([ucla_treatment_f.surgery])))
+
+
 
 xa_fs = keyed_list([ucla_cov_f(ucla_cov_f.age), bin_f(ucla_cov_f(ucla_cov_f.psa), bin(0,20)), s_f(ys_f(ys_f.sexual_function)), ones_f()])
 xb_fs = xa_fs
 xc_fs = xa_fs
+
+#df = get_dataframe_f(xa_fs).call_and_save(surgery_pids)
 
 init = s_f(ys_f(ys_f.sexual_function))
 a_ys = modified_ys_f(ys_f(ys_f.sexual_function), score_modifier_f(0))
@@ -19,11 +28,23 @@ gg=set_hard_coded_key_dec(x_abc_fs, 'feat')(xa_fs, xb_fs, xc_fs)
 data = get_data_f(gg, init, a_ys)(surgery_pids)
 filtered_data = filtered_get_data_f()(data)
 
+training_data = get_data_fold_testing(0,3)(filtered_data)
 
-prior_trainer = get_prior_predictor_f(train_better_pops_f())
+agg = aggregate_curve_f()(training_data)
+print agg
+
+
+get_pops_f = train_better_pops_f()
+
+get_posterior_f = get_diffcovs_posterior_f(get_pops_f, h, 1000, 1, 1)
+
+diffcovs_trainer = get_diffcovs_point_predictor_f(get_posterior_f, get_param_mean_f())
+
+prior_trainer = get_prior_predictor_f(get_pops_f)
 
 logreg_trainer = get_logreg_predictor_f(times)
 
+diffcovs_trainer(training_data)
 
 trainers = [prior_trainer, logreg_trainer]
 #trainers = [logreg_trainer]

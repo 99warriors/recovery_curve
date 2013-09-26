@@ -2,7 +2,7 @@
 
 args <- commandArgs(trailing=TRUE)
 pops_file <- args[1]
-data_path                                                                                        
+data_path <- args[2]
 hypers_path <- args[3]
 iters <- args[4]
 chains <- args[5]

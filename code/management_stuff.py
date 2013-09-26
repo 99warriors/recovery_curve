@@ -73,10 +73,12 @@ class call_and_save(object):
         if os.path.exists(full_path) and not inst.to_recalculate:
             x = set_location_dec(set_hard_coded_key_dec(inst.read_f, key), location)(full_path)
         else:
-            x = set_location_dec(set_hard_coded_key_dec(self.f, key), location)(inst, *args, **kwargs)
+            #x = set_location_dec(set_hard_coded_key_dec(self.f, key), location)(inst, *args, **kwargs)
+            x = self.f(inst, *args, **kwargs)
             if not os.path.exists(location):
                 os.makedirs(location)
             inst.print_handler_f(x, full_path)
+        x.set_creator(inst)
         return x
 
     def __get__(self, inst, cls):
@@ -84,14 +86,22 @@ class call_and_save(object):
 
 class call_and_key(object):
     """
-    decorator that just sets the key 
+    decorator that just sets the key.  sets location too if possible(factory has location_f defined)
     """
     def __init__(self, f):
         self.f = f
 
     def __call__(self, inst, *args, **kwargs):
         key = inst.key_f(*args, **kwargs)
-        return set_hard_coded_key_dec(self.f, key)(inst, *args, **kwargs)
+        x = set_hard_coded_key_dec(self.f, key)(inst, *args, **kwargs)
+        try:
+            location = inst.location_f(*args, **kwargs)
+        except AttributeError:
+            pass
+        else:
+            x.set_location(location)
+        x.set_creator(inst)
+        return x
 
     def __get__(self, inst, cls):
         return functools.partial(self, inst)
@@ -111,33 +121,28 @@ class call_and_cache(object):
         key = inst.key_f(*args, **kwargs)
         try:
             x = self.cache[key]
-            try:
-                x.set_hard_coded_key(key)
-            except AttributeError:
-                pass
             print 'FOUND'
         except KeyError:
             x = set_hard_coded_key_dec(self.f, key)(inst, *args, **kwargs)
             self.cache[key] = x
+        try:
+            x.set_hard_coded_key(key)
+        except AttributeError:
+            pass
+        try:
+            location = inst.location_f(*args, **kwargs)
+        except AttributeError:
+            pass
+        else:
+            x.set_location(location)
+        x.set_creator(inst)
         return x
 
     def __get__(self, inst, cls):
         return functools.partial(self, inst)
 
-class save_object(object):
-    """
-    for object whose get_key and get_location are determined, aka a keyed_object, saves it
-    
-    """
-    def __init__(self, get_location_f):
-        pass
 
-    def __call__(self, x):
-        import os
-        full_path = x.get_full_path()
-        if not os.path.exists(full_path) or x.recalculate:
-            x.print_handler_f(x, full_path)
-        
+
 
 class raise_if_na(object):
     """
@@ -185,6 +190,12 @@ class keyed_object(object):
     def set_location(self, location):
         self.location = location
 
+    def set_creator(self, fp):
+        self.fp = fp
+
+    def get_creator(self):
+        return self.fp
+
     def get_full_path(self):
         return '%s/%s' % (self.get_location(), self.get_key())
 
@@ -221,6 +232,48 @@ class possibly_cached(keyed_object):
         """
         return '%s/%s' % (self.location_f(*args, **kwargs), self.key_f(*args, **kwargs))
 
+    @classmethod
+    def get_cls(cls):
+        return cls
+
+    def call_and_save(self, *args, **kwargs):
+        """
+        version of call where you explicitly specify that object should be saved
+        exact same as call_and_save.  later on figure out how to use the decorator version to do this
+        """
+        x = self.__call__(*args, **kwargs)
+        location = self.location_f(*args, **kwargs)
+        key = self.key_f(*args, **kwargs)
+        full_path = '%s/%s' % (location, key)
+        if os.path.exists(full_path) and not self.to_recalculate:
+            x = set_location_dec(set_hard_coded_key_dec(self.read_f, key), location)(full_path)
+        else:
+            x = self.__call__(*args, **kwargs)
+            if not os.path.exists(location):
+                os.makedirs(location)
+            self.print_handler_f(x, full_path)
+        return x
+
+    def save(self, x):
+        """
+        assuming x has key and location set.  saves to file using the write_f for this factory
+        for use when you only have access to the object returned by factory, not the arguments used to create it
+        """
+        self.print_handler_f(x, x.get_full_path())
+
+
+class save_factory_base(possibly_cached):
+    """
+    factory whose sole purpose is so that i can decorate __call__ with cache_and_save and save it
+    pass in the pre-created item
+    """
+    def key_f(self, item):
+        return item.get_key()
+
+    @call_and_save
+    def __call__(self, item):
+        return item
+        
 
 def set_hard_coded_key_dec(f, hard_coded_key):
 
