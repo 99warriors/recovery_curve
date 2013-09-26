@@ -69,6 +69,7 @@ class call_and_save(object):
         location = inst.location_f(*args, **kwargs)
         key = inst.key_f(*args, **kwargs)
         full_path = '%s/%s' % (location, key)
+        print len(full_path), full_path, 
         if os.path.exists(full_path) and not inst.to_recalculate:
             x = set_location_dec(set_hard_coded_key_dec(inst.read_f, key), location)(full_path)
         else:
@@ -154,6 +155,7 @@ class keyed_object(object):
         return self.hard_coded_key
 
     def set_hard_coded_key(self, hard_coded_key):
+        print hard_coded_key
         assert type(hard_coded_key) == str
         self.hard_coded_key = hard_coded_key
 
@@ -199,8 +201,6 @@ class possibly_cached(keyed_object):
     read_f = staticmethod(not_implemented_f)
 
     to_recalculate = None
-
-    to_savefile = False
 
     def __call__(self, *args, **kwargs):
         raise NotImplementedError

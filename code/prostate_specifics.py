@@ -5,6 +5,9 @@ train_diffcovs_r_script = ''
 xs_file = '../raw_data/xs.csv'
 ys_folder = '../raw_data/series'
 all_pid_file = '../raw_data/pids.csv'
+times = [1,2,4,8,12,18,24,30,36,42,48]
+percentiles = [.25, .50, .75]
+
 
 from management_stuff import *
 import pandas
@@ -34,7 +37,7 @@ def read_diffcovs_data(folder):
     xbs_file = '%s/%s' % (folder, 'xbs.csv')
     xcs_file = '%s/%s' % (folder, 'xcs.csv')
     ss_file = '%s/%s' % (folder, 'ss.csv')
-    pids = pd.read_csv(pids_file, header=None, squeeze=True)
+    pids = pd.read_csv(pids_file, header=None, squeeze=True, converters={0:str})
     xas = pd.read_csv(xbs_file, header=0, index_col=0)
     xbs = pd.read_csv(xbs_file, header=0, index_col=0)
     xcs = pd.read_csv(xcs_file, header=0, index_col=0)
@@ -48,8 +51,10 @@ def read_diffcovs_data(folder):
     return data(l)
 
 def read_DataFrame(full_path):
-    import pandas
     return keyed_DataFrame(pandas.read_csv(full_path, index_col=0, header=0))
+
+def read_Series(full_path):
+    return keyed_Series(pandas.read_csv(full_path, index_col=0, header=0, squeeze=True))
 
 """
 print_fs
@@ -86,6 +91,8 @@ def hypers_print_f(h):
 def write_DataFrame(df, full_path):
     df.to_csv(full_path, header=True, index=True)
 
+def write_Series(s, full_path):
+    s.to_csv(full_path, header=True, index=True)
 
 """
 keyed_objects
@@ -101,6 +108,9 @@ class keyed_list(list, keyed_object):
    
     def get_introspection_key(self):
         return '_'.join([x.get_key() for x in self])
+
+class keyed_Series(pandas.Series, keyed_object):
+    pass
 
 """
 id_iterators
@@ -161,11 +171,11 @@ class ucla_treatment_f(feat):
     def __call__(self, pid):
         first = pid[0]
         if first == '1':
-            return ucla_treatment_f.surgery
+            return ucla_treatment_f.brachy
         elif first == '2':
             return ucla_treatment_f.radiation
         elif first == '3':
-            return ucla_treatment_f.brachy
+            return ucla_treatment_f.surgery
         assert False
 
 class ucla_cov_f(feat):
@@ -280,7 +290,7 @@ class prior_predictor(keyed_object):
         self.pops = pops
 
     def __call__(self, datum, time):
-        return the_f(time, datum.s, pops.pop_a, pops.pop_b, pops.pop_c)
+        return the_f(time, datum.s, self.pops.pop_a, self.pops.pop_b, self.pops.pop_c)
 
 
 class get_prior_predictor_f(possibly_cached):
@@ -430,21 +440,6 @@ class get_logreg_predictor_f(possibly_cached):
             Bs[time] = train_logistic_model(this_xas, y)
         return logreg_predictor(pandas.DataFrame(Bs))
 
-class get_prior_predictor_f(possibly_cached):
-    """
-    returns trained prior predictor
-    """
-    def get_introspection_key(self):
-        return '%s_%s_%s' % ('prior_predictor_factory', get_pops_f.get_key(), data.get_key())
-
-    def __init__(self, get_pops_f, data):
-        self.get_pops_f, self.data = get_pops_f, data
-        self.pops = self.get_pops_f(data)
-
-    def __call__(self, datum, time):
-        return the_f(time, datum.s, self.pops.pop_a, self.pops.pop_b, self.pops.pop_c)
-
-
 
 
 class cross_validated_scores_f(possibly_cached):
@@ -455,14 +450,28 @@ class cross_validated_scores_f(possibly_cached):
     def get_introspection_key(self):
         return '%s_%s_%d' % ('cvscore', self.get_predictor_f.get_key(), self.fold_k)
 
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s' % (data_home, 'scores')
+
+    print_handler_f = staticmethod(write_DataFrame)
+
+    read_f = staticmethod(read_DataFrame)
+
+    to_recalculate = True
+
     def __init__(self, get_predictor_f, fold_k, times):
         self.get_predictor_f, self.fold_k, self.times = get_predictor_f, fold_k, times
 
+
+    @call_and_cache
     def __call__(self, data):
         fold_scores = []
         for i in range(self.fold_k):
-            train_data = call_and_save(get_data_fold_training(i, self.fold_k))(data)
-            test_data = call_and_save(get_data_fold_training(i, self.fold_k))(data)
+            train_data = get_data_fold_training(i, self.fold_k)(data)
+            test_data = get_data_fold_testing(i, self.fold_k)(data)
             predictor = self.get_predictor_f(train_data)
             fold_scores.append(pandas.DataFrame({datum.pid:{time:predictor(datum, time) for time in self.times} for datum in test_data}))
         return keyed_DataFrame(pandas.concat(fold_scores, axis=1))
@@ -494,6 +503,7 @@ class performance_series_f(possibly_cached):
         losses = diff.apply(self.loss_f, axis=1)
         mean_losses = losses.apply(np.mean, axis=1)
         loss_percentiles = losses.apply(functools.partial(get_percentiles, percentiles=self.percentiles), axis=1)
+        pdb.set_trace()
         loss_percentiles['mean'] = mean_losses
         return keyed_DataFrame(loss_percentiles)
         
@@ -568,7 +578,7 @@ class get_data_f(possibly_cached):
 
     read_f = staticmethod(read_diffcovs_data)
 
-    to_recalculate = False
+    to_recalculate = True
 
     @call_and_cache
     @call_and_save
@@ -637,50 +647,52 @@ class filtered_get_data_f(keyed_object):
 class get_data_fold_training(possibly_cached):
 
     def get_introspection_key(self):
-        '%s_%d_%d' % ('training_fold', self.fold_i, self.fold_k)
+        return '%s_%d_%d' % ('training_fold', self.fold_i, self.fold_k)
 
     def key_f(self, data):
-        '%s_%s' % (self.get_key(), data.get_key())
+        return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
         return '%s/%s_%d_%d' % (data.get_location(), 'training', self.fold_i, self.fold_k)
 
-    print_handler = staticmethod(write_diffcovs_data)
+    print_handler_f = staticmethod(write_diffcovs_data)
 
     read_f = staticmethod(read_diffcovs_data)
 
     to_recalculate = False
 
     def __init__(self, fold_i, fold_k):
-        self.fold_i, self.fold_k = get_data_f, fold_i, fold_k
+        self.fold_i, self.fold_k = fold_i, fold_k
 
-    def __call__(self, data):
-        return data([datum for datum,i in zip(data, range(len(data))) if i%fold_k != fold_i])
+    @call_and_cache
+    def __call__(self, _data):
+        return data([datum for datum,i in zip(_data, range(len(_data))) if i%self.fold_k != self.fold_i])
             
 
 
 class get_data_fold_testing(possibly_cached):
 
     def get_introspection_key(self):
-        '%s_%d_%d' % ('testing_fold', self.fold_i, self.fold_k)
+        return '%s_%d_%d' % ('testing_fold', self.fold_i, self.fold_k)
 
     def key_f(self, data):
-        '%s_%s' % (self.get_key(), data.get_key())
+        return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
         return '%s/%s_%d_%d' % (data.get_location(), 'testing', self.fold_i, self.fold_k)
 
-    print_handler = staticmethod(write_diffcovs_data)
+    print_handler_f = staticmethod(write_diffcovs_data)
 
     read_f = staticmethod(read_diffcovs_data)
 
     to_recalculate = False
 
     def __init__(self, fold_i, fold_k):
-        self.fold_i, self.fold_k = get_data_f, fold_i, fold_k
+        self.fold_i, self.fold_k = fold_i, fold_k
 
-    def __call__(self, data):
-        return data([datum for datum,i in zip(data, range(len(data))) if i%fold_k == fold_i])
+    @call_and_cache
+    def __call__(self, _data):
+        return data([datum for datum,i in zip(_data, range(len(_data))) if i%self.fold_k == self.fold_i])
             
 
 """
@@ -754,7 +766,7 @@ class modified_ys_f(possibly_cached):
         raw = self.ys_f(pid)
         scaled = raw.apply(self.score_modifier_f)
         ans = scaled[scaled.index != 0]
-        return pandas.Series({k-1:v for k,v in ans.iteritems()})
+        return pandas.Series({k:v for k,v in ans.iteritems()})
         return ans
 
 class ys_f(keyed_object):
@@ -797,6 +809,32 @@ class hypers(keyed_object):
     to_recalculate = False
 
 """
+related to plotting
+"""
+class aggregate_curve_f(possibly_cached):
+
+    def get_introspection_key(self):
+        return 'agg'
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s' % (data_home, 'aggregate_curves')
+
+    print_handler_f = staticmethod(write_Series)
+
+    read_f = staticmethod(read_Series)
+
+    def __call__(self, data):
+        all_ys = pandas.DataFrame({datum.pid:datum.ys for datum in data})
+        mean = all_ys.apply(np.mean, axis=1)
+        return keyed_Series(mean)
+
+
+
+
+"""
 helpers
 """
 
@@ -834,9 +872,9 @@ class hard_coded_f(object):
 
 
 def get_percentiles(l, percentiles):
-    s_l = sorted(l)
+    s_l = sorted(l.dropna())
     num = len(l)
-    return [s_l[int((p*num)+1)-1] for p in percentiles]
+    return pandas.Series([s_l[int((p*num)+1)-1] for p in percentiles],index=percentiles)
 
 def logistic(x):
     return 1.0 / (1 + np.exp(-x))

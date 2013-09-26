@@ -36,6 +36,21 @@ pdb.set_trace()
 
 filtered_data = filtered_get_data_f()(data)
 
+trainer = get_prior_predictor_f(train_better_pops_f())
+
+crosser = cross_validated_scores_f(trainer, 3, times)
+
+performance_series_f(crosser, scaled_logistic_loss_f(10), percentiles)(filtered_data)
+
+
+scores = crosser(filtered_data)
+
+pdb.set_trace()
+
+fold = get_data_fold_training(0, 3)(filtered_data)
+
+agg = aggregate_curve_f()(filtered_data)
+
 pdb.set_trace()
 
 pops = train_better_pops_f()(filtered_data)
