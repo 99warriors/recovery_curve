@@ -20,7 +20,7 @@ read_fs
 """
 
 
-def read_posterior_traces(folder):
+def read_unheadered_posterior_traces(folder):
     B_a_trace = pandas.read_csv(folder+'/out_B_a.csv', header=None)
     B_b_trace = pandas.read_csv(folder+'/out_B_b.csv', header=None)
     B_c_trace = pandas.read_csv(folder+'/out_B_c.csv', header=None)
@@ -28,6 +28,16 @@ def read_posterior_traces(folder):
     phi_b_trace = pandas.read_csv(folder+'/out_phi_b.csv', header=None)
     phi_c_trace = pandas.read_csv(folder+'/out_phi_c.csv', header=None)
     phi_m_trace = pandas.read_csv(folder+'/out_phi_m.csv', header=None)
+    return keyed_dict({'B_a':B_a_trace, 'B_b':B_b_trace, 'B_c':B_c_trace, 'phi_a':phi_a_trace, 'phi_b':phi_b_trace, 'phi_c':phi_c_trace,'phi_m':phi_m_trace})
+
+def read_posterior_traces(folder):
+    B_a_trace = pandas.read_csv(folder+'/out_B_a.csv', header=0)
+    B_b_trace = pandas.read_csv(folder+'/out_B_b.csv', header=0)
+    B_c_trace = pandas.read_csv(folder+'/out_B_c.csv', header=0)
+    phi_a_trace = pandas.read_csv(folder+'/out_phi_a.csv', header=0)
+    phi_b_trace = pandas.read_csv(folder+'/out_phi_b.csv', header=0)
+    phi_c_trace = pandas.read_csv(folder+'/out_phi_c.csv', header=0)
+    phi_m_trace = pandas.read_csv(folder+'/out_phi_m.csv', header=0)
     return keyed_dict({'B_a':B_a_trace, 'B_b':B_b_trace, 'B_c':B_c_trace, 'phi_a':phi_a_trace, 'phi_b':phi_b_trace, 'phi_c':phi_c_trace,'phi_m':phi_m_trace})
 
 def read_diffcovs_data(folder):
@@ -93,13 +103,13 @@ def write_diffcovs_data(d, folder):
         p.ys.to_csv(p_ys_file, header=False, index=True)
 
 def write_posterior_traces(traces, folder):
-    traces['B_a'].write_csv(folder+'/out_B_a.csv', header=False, index=False)
-    traces['B_b'].write_csv(folder+'/out_B_b.csv', header=False, index=False)
-    traces['B_c'].write_csv(folder+'/out_B_c.csv', header=False, index=False)
-    traces['phi_a'].write_csv(folder+'/out_phi_a.csv', header=False, index=False)
-    traces['phi_b'].write_csv(folder+'/out_phi_b.csv', header=False, index=False)
-    traces['phi_c'].write_csv(folder+'/out_phi_c.csv', header=False, index=False)
-    traces['phi_m'].write_csv(folder+'/out_phi_m.csv', header=False, index=False)
+    traces['B_a'].to_csv(folder+'/out_B_a.csv', header=False, index=False)
+    traces['B_b'].to_csv(folder+'/out_B_b.csv', header=False, index=False)
+    traces['B_c'].to_csv(folder+'/out_B_c.csv', header=False, index=False)
+    traces['phi_a'].to_csv(folder+'/out_phi_a.csv', header=False, index=False)
+    traces['phi_b'].to_csv(folder+'/out_phi_b.csv', header=False, index=False)
+    traces['phi_c'].to_csv(folder+'/out_phi_c.csv', header=False, index=False)
+    traces['phi_m'].to_csv(folder+'/out_phi_m.csv', header=False, index=False)
 
 def hypers_print_f(h):
     return '%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f' % (h.c_a,h.c_b,h.c_c,h.l_a,h.l_b,h.l_c,h.l_m)
@@ -366,7 +376,7 @@ class get_diffcovs_posterior_f(possibly_cached):
 
     read_f = staticmethod(read_posterior_traces)
 
-    to_recalculate = False
+    to_recalculate = True
 
     def __init__(self, get_pops_f, hypers, iters, chains, seed):
         self.r_script = train_diffcovs_r_script
@@ -386,8 +396,17 @@ class get_diffcovs_posterior_f(possibly_cached):
         cmd = '%s %s %s %s %s %d %d %d %s' % ('Rscript', self.r_script, pops_path, data_path, hypers_path, self.iters, self.chains, self.seed, save_path)
         print cmd
         subprocess.call(cmd, shell=True)
-        return self.read_f(save_path)
-
+        posteriors = read_unheadered_posterior_traces(save_path)
+        # set the column names of posterior traces
+        a_datum = iter(data).next()
+        posteriors['B_a'].columns = a_datum.xa.index
+        posteriors['B_b'].columns = a_datum.xb.index
+        posteriors['B_c'].columns = a_datum.xc.index
+        posteriors['phi_a'].name = 'phi_a'
+        posteriors['phi_b'].name = 'phi_b'
+        posteriors['phi_c'].name = 'phi_c'
+        posteriors['phi_m'].name = 'phi_m'
+        return posteriors
 
 class full_model_point_predictor(keyed_object):
     """
@@ -400,9 +419,9 @@ class full_model_point_predictor(keyed_object):
         self.params, self.pops = params, pops
 
     def __call__(self, datum, time):
-        a = g_a(self.pops.pop_a, datum.xa.dot(self.params['B_a']))
-        b = g_b(self.pops.pop_b, datum.xb.dot(self.params['B_b']))
-        c = g_c(self.pops.pop_c, datum.xc.dot(self.params['B_c']))
+        a = g_a(self.pops.pop_a, self.params['B_a'], datum.xa)
+        b = g_a(self.pops.pop_b, self.params['B_b'], datum.xb)
+        c = g_a(self.pops.pop_c, self.params['B_c'], datum.xc)
         return the_f(time, datum.s, a, b, c)
 
 
@@ -909,13 +928,13 @@ def the_f(t, s, a, b, c):
     return s * ( (1.0-a) - (1.0-a)*(b) * math.exp(-1.0*t/c))
 
 def g_a(pop_a, B_a, xa):
-    pass
+    return logistic(pop_a + xa.dot(B_a))
                  
-def g_c(pop_b, B_b, xb):
-    pass
+def g_b(pop_b, B_b, xb):
+    return logistic(pop_b + xb.dot(B_b))
 
 def g_c(pop_c, B_c, xc):
-    pass
+    return logistic(pop_c + xc.dot(B_c))
 
 def get_curve_abc(s, curve):
     import math
