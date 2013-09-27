@@ -46,23 +46,23 @@ get_real_full_data_diffcovs <- function(folder_path){
     xas_file <- paste(folder_path,'xas.csv',sep='/')
     print('xas')
     print(xas_file)	
-    xas <- read.csv(xas_file,header=T,row.names=1)
+    xas <- t(read.csv(xas_file,header=T,row.names=1))
 
     xbs_file <- paste(folder_path,'xbs.csv',sep='/')
     print('xbs')
     print(xbs_file)		
-    xbs <- read.csv(xbs_file,header=T,row.names=1)
+    xbs <- t(read.csv(xbs_file,header=T,row.names=1))
 
     xcs_file <- paste(folder_path,'xcs.csv',sep='/')	
     print('xcs')
     print(xcs_file)	
-    xcs <- read.csv(xcs_file,header=T,row.names=1)
+    xcs <- t(read.csv(xcs_file,header=T,row.names=1))
 			    
     pids_file <- paste(folder_path, 'pids.csv',sep='/')
     print('pids')
     print(pids_file)	
     pids <- read.csv(pids_file, header=F)[,1]
-    print(pids)
+    #print(pids)
     print('after')
 
     #get_x_by_pid <- Curry(get_x_by_pid_given_xs, xs=xs_a)

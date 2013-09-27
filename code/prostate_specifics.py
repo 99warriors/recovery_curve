@@ -21,13 +21,13 @@ read_fs
 
 
 def read_posterior_traces(folder):
-    B_a_trace = pandas.read_csv(folder+'out_B_a.csv', header=None)
-    B_b_trace = pandas.read_csv(folder+'out_B_b.csv', header=None)
-    B_c_trace = pandas.read_csv(folder+'out_B_c.csv', header=None)
-    phi_a_trace = pandas.read_csv(folder+'out_phi_a.csv', header=None)
-    phi_b_trace = pandas.read_csv(folder+'out_phi_b.csv', header=None)
-    phi_c_trace = pandas.read_csv(folder+'out_phi_c.csv', header=None)
-    phi_m_trace = pandas.read_csv(folder+'out_phi_m.csv', header=None)
+    B_a_trace = pandas.read_csv(folder+'/out_B_a.csv', header=None)
+    B_b_trace = pandas.read_csv(folder+'/out_B_b.csv', header=None)
+    B_c_trace = pandas.read_csv(folder+'/out_B_c.csv', header=None)
+    phi_a_trace = pandas.read_csv(folder+'/out_phi_a.csv', header=None)
+    phi_b_trace = pandas.read_csv(folder+'/out_phi_b.csv', header=None)
+    phi_c_trace = pandas.read_csv(folder+'/out_phi_c.csv', header=None)
+    phi_m_trace = pandas.read_csv(folder+'/out_phi_m.csv', header=None)
     return keyed_dict({'B_a':B_a_trace, 'B_b':B_b_trace, 'B_c':B_c_trace, 'phi_a':phi_a_trace, 'phi_b':phi_b_trace, 'phi_c':phi_c_trace,'phi_m':phi_m_trace})
 
 def read_diffcovs_data(folder):
@@ -91,6 +91,15 @@ def write_diffcovs_data(d, folder):
     for p in d:
         p_ys_file = '%s/%s' % (ys_folder, p.pid)
         p.ys.to_csv(p_ys_file, header=False, index=True)
+
+def write_posterior_traces(traces, folder):
+    traces['B_a'].write_csv(folder+'/out_B_a.csv', header=False, index=False)
+    traces['B_b'].write_csv(folder+'/out_B_b.csv', header=False, index=False)
+    traces['B_c'].write_csv(folder+'/out_B_c.csv', header=False, index=False)
+    traces['phi_a'].write_csv(folder+'/out_phi_a.csv', header=False, index=False)
+    traces['phi_b'].write_csv(folder+'/out_phi_b.csv', header=False, index=False)
+    traces['phi_c'].write_csv(folder+'/out_phi_c.csv', header=False, index=False)
+    traces['phi_m'].write_csv(folder+'/out_phi_m.csv', header=False, index=False)
 
 def hypers_print_f(h):
     return '%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f' % (h.c_a,h.c_b,h.c_c,h.l_a,h.l_b,h.l_c,h.l_m)
@@ -353,7 +362,7 @@ class get_diffcovs_posterior_f(possibly_cached):
     def location_f(self, data):
         return '%s/%s/%s' % (data.get_location(), 'trained_diffcovs', self.get_pops_f.get_key())
 
-    print_handler_f = staticmethod(do_nothing_adapter)
+    print_handler_f = staticmethod(folder_adapter(write_posterior_traces))
 
     read_f = staticmethod(read_posterior_traces)
 
@@ -363,6 +372,7 @@ class get_diffcovs_posterior_f(possibly_cached):
         self.r_script = train_diffcovs_r_script
         self.get_pops_f, self.hypers, self.iters, self.chains, self.seed = get_pops_f, hypers, iters, chains, seed
 
+    @call_and_save
     def __call__(self, data):
         pops = self.get_pops_f.call_and_save(data)
         pops_path = self.get_pops_f.full_path_f(data)
@@ -374,6 +384,7 @@ class get_diffcovs_posterior_f(possibly_cached):
         make_folder(save_path)
         import subprocess
         cmd = '%s %s %s %s %s %d %d %d %s' % ('Rscript', self.r_script, pops_path, data_path, hypers_path, self.iters, self.chains, self.seed, save_path)
+        print cmd
         subprocess.call(cmd, shell=True)
         return self.read_f(save_path)
 
@@ -406,13 +417,17 @@ class get_param_mean_f(possibly_cached):
         return '%s_%s' % (self.get_key(), post_param.get_key())
 
     def __call__(self, post_params):
-        return keyed_dict({p:np.mean(p) for p in post_params})
+        return keyed_dict({p:v.apply(pandas.Series.mean, axis=0) for p,v in post_params.iteritems()})
         
 
 class get_diffcovs_point_predictor_f(possibly_cached):
     """
     return trained object that makes point predictions
     """
+    display_color = 'blue'
+
+    display_name = 'full'
+
     def get_introspection_key(self):
         return '%s_%s_%s' % ('fullpred_f', self.get_diffcovs_posterior_f.get_key(), self.summarize_posterior_f.get_key())
 
@@ -468,7 +483,6 @@ class get_logreg_predictor_f(possibly_cached):
         for now, use only xa for prediction
         """
         Bs = {}
-        pdb.set_trace()
         xas = pandas.DataFrame({datum.pid:datum.xa for datum in _data})
         for time in self.times:
             y = pandas.Series({datum.pid:datum.ys[time] for datum in _data})
@@ -509,7 +523,6 @@ class cross_validated_scores_f(possibly_cached):
         for i in range(self.fold_k):
             train_data = get_data_fold_training(i, self.fold_k)(data)
             test_data = get_data_fold_testing(i, self.fold_k)(data)
-            pdb.set_trace()
             predictor = self.get_predictor_f(train_data)
             fold_scores.append(pandas.DataFrame({datum.pid:{time:predictor(datum, time) for time in self.times} for datum in test_data}))
         return keyed_DataFrame(pandas.concat(fold_scores, axis=1))
@@ -536,7 +549,6 @@ class performance_series_f(possibly_cached):
     def __call__(self, data):
         # have raw scores for each patient
         scores = self.scores_getter_f(data)
-        pdb.set_trace()
         true_ys = pandas.DataFrame({datum.pid:datum.ys for datum in data})
         diff = (scores - true_ys).abs()
         losses = diff.apply(self.loss_f, axis=1)

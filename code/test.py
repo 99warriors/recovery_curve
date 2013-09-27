@@ -44,9 +44,9 @@ prior_trainer = get_prior_predictor_f(get_pops_f)
 
 logreg_trainer = get_logreg_predictor_f(times)
 
-diffcovs_trainer(training_data)
+#diffcovs_trainer(training_data)
 
-trainers = [prior_trainer, logreg_trainer]
+trainers = [prior_trainer, logreg_trainer, diffcovs_trainer]
 #trainers = [logreg_trainer]
 performances = {}
 
