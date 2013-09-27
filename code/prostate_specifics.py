@@ -273,6 +273,31 @@ class pops(keyed_object):
         return pops(float(raw[0]), float(raw[1]), float(raw[2]))
 
 
+class train_shape_pops_f(possibly_cached):
+    """
+    used as init input for full and prior model
+    """
+    
+    def get_introspection_key(self):
+        return 'shapepops'
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s' % (data.get_location(), 'shape_pops')
+
+    print_handler_f = staticmethod(string_adapter(pops.print_f))
+
+    read_f = staticmethod(pops.read_f)
+
+    to_recalculate = True
+
+    def __call__(self, data):
+        avg_shape = aggregate_shape_f()(data)
+        a,b,c = get_curve_abc(1.0, avg_shape)
+        return pops(a,b,c)
+
 class train_better_pops_f(possibly_cached):
     """
     used as init input for full and prior model
@@ -291,7 +316,7 @@ class train_better_pops_f(possibly_cached):
 
     read_f = staticmethod(pops.read_f)
 
-    to_recalculate = False
+    to_recalculate = True
 
     @call_and_cache
     @call_and_save
@@ -305,17 +330,17 @@ class train_better_pops_f(possibly_cached):
             error = 0.0
             for datum in data:
                 fit_f = functools.partial(the_f, s=datum.s, a=a, b=b, c=c)
-                fitted = pandas.Series(datum.ys.index).apply(fit_f)
-                diff_vect = (fitted - datum.ys).dropna()
+                has = datum.ys.dropna()
+                fitted = pandas.Series(has.index,index=has.index).apply(fit_f)
+                diff_vect = (fitted - has)
                 this = diff_vect.dot(diff_vect)
                 error += this
+                
                 """
                 for t,v in datum.ys.iteritems():
                     fitted_val = the_f(t,datum.s,a,b,c)
-                    error = error + pow(fitted_val - v, 2)
-                    if np.isnan(error):
-                        pdb.set_trace()
-                    print pow(fitted_val - v, 2), error
+                    if not np.isnan(v):
+                        error = error + pow(fitted_val - v, 2)
                 """
             print error
             return error
@@ -675,7 +700,7 @@ class filtered_get_data_f(keyed_object):
 
     read_f = staticmethod(read_diffcovs_data)
 
-    to_recalculate = False
+    to_recalculate = True
 
     @call_and_cache
     @call_and_save
@@ -692,6 +717,8 @@ class filtered_get_data_f(keyed_object):
                 if error / sum(datum.ys.notnull()) > 0.08:
                     raise Exception
                 if sum(datum.ys.notnull()) < 8:
+                    raise Exception
+                if datum.s < 0.15:
                     raise Exception
                 
             except Exception:
@@ -744,7 +771,7 @@ class get_data_fold_testing(possibly_cached):
 
     read_f = staticmethod(read_diffcovs_data)
 
-    to_recalculate = False
+    to_recalculate = True
 
     def __init__(self, fold_i, fold_k):
         self.fold_i, self.fold_k = fold_i, fold_k
@@ -908,7 +935,25 @@ class aggregate_curve_f(possibly_cached):
         return keyed_Series(mean)
 
 
+class aggregate_shape_f(possibly_cached):
 
+    def get_introspection_key(self):
+        return 'aggshape'
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s' % (data_home, 'aggregate_shapes')
+
+    print_handler_f = staticmethod(write_Series)
+
+    read_f = staticmethod(read_Series)
+
+    def __call__(self, data):
+        all_ys = pandas.DataFrame({datum.pid:datum.ys/datum.s for datum in data})
+        mean_shape = all_ys.apply(np.mean, axis=1)
+        return keyed_Series(mean_shape)
 
 """
 helpers
