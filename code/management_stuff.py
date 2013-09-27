@@ -78,7 +78,36 @@ class call_and_save(object):
             if not os.path.exists(location):
                 os.makedirs(location)
             inst.print_handler_f(x, full_path)
-        x.set_creator(inst)
+        try:
+            x.set_creator(inst)
+        except Exception:
+            pass
+        return x
+
+    def __get__(self, inst, cls):
+        return functools.partial(self, inst)
+
+class call_and_save_no_memoize(object):
+    """
+    decorator that only saves, does not try to check if object is in file already
+    """
+    def __init__(self, f):
+        self.f = f
+
+    def __call__(self, inst, *args, **kwargs):
+        location = inst.location_f(*args, **kwargs)
+        key = inst.key_f(*args, **kwargs)
+        full_path = '%s/%s' % (location, key)
+        x = self.f(inst, *args, **kwargs)
+        if not os.path.exists(location):
+            os.makedirs(location)
+
+        inst.print_handler_f(x, full_path)
+        try:
+            x.set_creator(inst)
+        except Exception:
+            pass
+
         return x
 
     def __get__(self, inst, cls):
@@ -98,9 +127,14 @@ class call_and_key(object):
             location = inst.location_f(*args, **kwargs)
         except AttributeError:
             pass
+        except NotImplementedError:
+            pass
         else:
             x.set_location(location)
-        x.set_creator(inst)
+        try:
+            x.set_creator(inst)
+        except Exception:
+            pass
         return x
 
     def __get__(self, inst, cls):
@@ -135,7 +169,11 @@ class call_and_cache(object):
             pass
         else:
             x.set_location(location)
-        x.set_creator(inst)
+        try:
+            x.set_creator(inst)
+        except Exception:
+            pass
+
         return x
 
     def __get__(self, inst, cls):
@@ -215,6 +253,7 @@ class possibly_cached(keyed_object):
         raise NotImplementedError
 
     def location_f(self, *args, **kwargs):
+        print self
         raise NotImplementedError
 
     print_handler_f = staticmethod(not_implemented_f)

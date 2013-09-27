@@ -1,6 +1,6 @@
 
 
-data_home = './scratch'
+data_home = './scratch2'
 train_diffcovs_r_script = './train_diffcovs_model.r'
 xs_file = '../raw_data/xs.csv'
 ys_folder = '../raw_data/series'
@@ -14,6 +14,9 @@ import pandas
 import numpy as np
 import functools
 import math
+import matplotlib.pyplot as plt
+import matplotlib
+from matplotlib.backends.backend_pdf import PdfPages
 
 """
 read_fs
@@ -103,13 +106,13 @@ def write_diffcovs_data(d, folder):
         p.ys.to_csv(p_ys_file, header=False, index=True)
 
 def write_posterior_traces(traces, folder):
-    traces['B_a'].to_csv(folder+'/out_B_a.csv', header=False, index=False)
-    traces['B_b'].to_csv(folder+'/out_B_b.csv', header=False, index=False)
-    traces['B_c'].to_csv(folder+'/out_B_c.csv', header=False, index=False)
-    traces['phi_a'].to_csv(folder+'/out_phi_a.csv', header=False, index=False)
-    traces['phi_b'].to_csv(folder+'/out_phi_b.csv', header=False, index=False)
-    traces['phi_c'].to_csv(folder+'/out_phi_c.csv', header=False, index=False)
-    traces['phi_m'].to_csv(folder+'/out_phi_m.csv', header=False, index=False)
+    traces['B_a'].to_csv(folder+'/out_B_a.csv', header=True, index=False)
+    traces['B_b'].to_csv(folder+'/out_B_b.csv', header=True, index=False)
+    traces['B_c'].to_csv(folder+'/out_B_c.csv', header=True, index=False)
+    traces['phi_a'].to_csv(folder+'/out_phi_a.csv', header=True, index=False)
+    traces['phi_b'].to_csv(folder+'/out_phi_b.csv', header=True, index=False)
+    traces['phi_c'].to_csv(folder+'/out_phi_c.csv', header=True, index=False)
+    traces['phi_m'].to_csv(folder+'/out_phi_m.csv', header=True, index=False)
 
 def hypers_print_f(h):
     return '%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f' % (h.c_a,h.c_b,h.c_c,h.l_a,h.l_b,h.l_c,h.l_m)
@@ -119,6 +122,11 @@ def write_DataFrame(df, full_path):
 
 def write_Series(s, full_path):
     s.to_csv(full_path, header=True, index=True)
+
+def figure_to_pdf(fig, full_path):
+    pp = PdfPages(full_path)
+    plt.savefig(pp, format='pdf')
+    pp.close()
 
 """
 keyed_objects
@@ -137,6 +145,7 @@ class keyed_list(list, keyed_object):
 
 class keyed_Series(pandas.Series, keyed_object):
     pass
+
 
 """
 id_iterators
@@ -316,7 +325,7 @@ class train_better_pops_f(possibly_cached):
 
     read_f = staticmethod(pops.read_f)
 
-    to_recalculate = True
+    to_recalculate = False
 
     @call_and_cache
     @call_and_save
@@ -420,17 +429,17 @@ class get_diffcovs_posterior_f(possibly_cached):
         import subprocess
         cmd = '%s %s %s %s %s %d %d %d %s' % ('Rscript', self.r_script, pops_path, data_path, hypers_path, self.iters, self.chains, self.seed, save_path)
         print cmd
-        subprocess.call(cmd, shell=True)
+        #subprocess.call(cmd, shell=True)
         posteriors = read_unheadered_posterior_traces(save_path)
         # set the column names of posterior traces
         a_datum = iter(data).next()
         posteriors['B_a'].columns = a_datum.xa.index
         posteriors['B_b'].columns = a_datum.xb.index
         posteriors['B_c'].columns = a_datum.xc.index
-        posteriors['phi_a'].name = 'phi_a'
-        posteriors['phi_b'].name = 'phi_b'
-        posteriors['phi_c'].name = 'phi_c'
-        posteriors['phi_m'].name = 'phi_m'
+        posteriors['phi_a'].columns = ['phi_a']
+        posteriors['phi_b'].columns = ['phi_b']
+        posteriors['phi_c'].columns = ['phi_c']
+        posteriors['phi_m'].columns = ['phi_m']
         return posteriors
 
 class full_model_point_predictor(keyed_object):
@@ -543,7 +552,7 @@ class cross_validated_scores_f(possibly_cached):
     return dataframe where columns are patients and rows are times
     """
     def get_introspection_key(self):
-        return '%s_%s_%d' % ('cvscore', self.get_predictor_f.get_key(), self.fold_k)
+        return '%s_%s_%s' % ('cvscore', self.get_predictor_f.get_key(), self.cv_f.get_key())
 
     def key_f(self, data):
         return '%s_%s' % (self.get_key(), data.get_key())
@@ -557,19 +566,43 @@ class cross_validated_scores_f(possibly_cached):
 
     to_recalculate = True
 
-    def __init__(self, get_predictor_f, fold_k, times):
-        self.get_predictor_f, self.fold_k, self.times = get_predictor_f, fold_k, times
+    def __init__(self, get_predictor_f, cv_f, times):
+        self.get_predictor_f, self.cv_f, self.times = get_predictor_f, cv_f, times
 
 
     @call_and_cache
+    @call_and_save
     def __call__(self, data):
         fold_scores = []
-        for i in range(self.fold_k):
-            train_data = get_data_fold_training(i, self.fold_k)(data)
-            test_data = get_data_fold_testing(i, self.fold_k)(data)
+        for train_data, test_data in self.cv_f(data):
             predictor = self.get_predictor_f(train_data)
             fold_scores.append(pandas.DataFrame({datum.pid:{time:predictor(datum, time) for time in self.times} for datum in test_data}))
         return keyed_DataFrame(pandas.concat(fold_scores, axis=1))
+
+
+class cv_fold_f(possibly_cached):
+    """
+    returns (training,testing) folds as a list.  each element of list needs to be keyed
+    """
+    def get_introspection_key(self):
+        return '%s_%s' % ('cv', self.fold_k)
+
+    def key_f(self, data):
+        return 'asdf'
+
+    def __init__(self, fold_k):
+        self.fold_k = fold_k
+
+    @call_and_key
+    def __call__(self, data):
+        folds = keyed_list()
+        for i in range(self.fold_k):
+            train_data = get_data_fold_training(i, self.fold_k)(data)
+            test_data = get_data_fold_testing(i, self.fold_k)(data)
+            folds.append(keyed_list([train_data, test_data]))
+        return folds
+            
+
 
 class scaled_logistic_loss_f(keyed_object):
 
@@ -616,6 +649,44 @@ class performance_series_f(possibly_cached):
     read_f = staticmethod(read_DataFrame)
 
     to_recalculate = False
+
+class between_model_performance_fig_f(possibly_cached):
+    """
+    returns a fig.  performance for several models, single loss function
+    had to pass in components of performance_series_getter bc i am varying trainer, which is input for those
+    """
+    def __init__(self, trainers, cv_f, loss_f, percentiles, times):
+        self.trainers, self.cv_f, self.loss_f, self.percentiles, self.times = trainers, cv_f, loss_f, percentiles, times
+
+    @call_and_save_no_memoize
+    def __call__(self, data):
+        fig = plt.figure()
+        ax = fig.add_subplot(1,1,1)
+        ax.set_title(self.loss_f.get_key())
+        for trainer in self.trainers:
+            score_getter = cross_validated_scores_f(trainer, self.cv_f, self.times)
+            _performance_series_f = performance_series_f(score_getter, self.loss_f, self.percentiles)
+            perfs = _performance_series_f(data)
+            add_performances_to_ax(ax, perfs, trainer.display_color, trainer.display_name)
+        fig.show()
+        return fig
+
+
+    def get_introspection_key(self):
+        return '%s_%s_%s_%s' % ('btwmodperf', self.trainers.get_key(), self.cv_f.get_key(), self.loss_f.get_key())
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s' % (data.get_location(), 'betweenmodel_perfs')
+
+    print_handler_f = staticmethod(figure_to_pdf)
+
+    read_f = staticmethod(not_implemented_f)
+
+    to_recalculate = False
+
 
 """
 what 'data' means for this project
@@ -700,7 +771,7 @@ class filtered_get_data_f(keyed_object):
 
     read_f = staticmethod(read_diffcovs_data)
 
-    to_recalculate = True
+    to_recalculate = False
 
     @call_and_cache
     @call_and_save
