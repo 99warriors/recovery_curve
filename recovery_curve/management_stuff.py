@@ -77,23 +77,31 @@ class method_decorator(object):
     def __get__(self, inst, cls):
         return functools.partial(self, inst)
 
+    def get_full_file_path(self, inst, *args, **kwargs):
+        location = inst.location_f(*args, **kwargs)
+        key = inst.key_f(*args, **kwargs)
+        return '%s/%s' % (location, key)
+
+    def get_full_pickle_path(self, inst, *args, **kwargs):
+        location = inst.location_f(*args, **kwargs)
+        key = inst.key_f(*args, **kwargs)
+        return '%s/%s.pickle' % (location, key)
+
 class read_from_file(method_decorator):
 
     def __call__(self, inst, *args, **kwargs):
-        location = inst.location_f(*args, **kwargs)
-        key = inst.key_f(*args, **kwargs)
-        full_path = '%s/%s' % (location, key)
+        full_path = self.get_full_file_path(inst, *args, **kwargs)
         if os.path.exists(full_path):
-            return set_location_dec(set_hard_coded_key_dec(inst.read_f, key), location)(full_path)
+            return inst.read_f(full_path)
         else:
             return self.f(inst, *args, **kwargs)
 
 class save_to_file(method_decorator):
 
     def __call__(self, inst, *args, **kwargs):
-        location = inst.location_f(*args, **kwargs)
-        key = inst.key_f(*args, **kwargs)
-        full_path = '%s/%s' % (location, key)
+        import os
+        full_path = self.get_full_file_path(inst, *args, **kwargs)
+        location = os.path.dirname(full_path)
         x = self.f(inst, *args, **kwargs)
         if not os.path.exists(location):
             os.makedirs(location)
@@ -101,7 +109,9 @@ class save_to_file(method_decorator):
         return x
 
 class key(method_decorator):
-
+    """
+    adds information related to the key and full_file_path
+    """
     def __call__(self, inst, *args, **kwargs):
         x = self.f(inst, *args, **kwargs)
         try:
@@ -143,8 +153,32 @@ class cache(method_decorator):
             self.cache[key] = x
         return x
 
+class read_from_pickle(method_decorator):
 
+    def __call__(self, inst, *args, **kwargs):
+        import pickle
+        full_pickle_path = self.get_full_pickle_path(inst, *args, **kwargs)
+        if os.path.exists(full_pickle_path):
+            f = open(full_pickle_path, 'rb')
+            x = pickle.load(f)
+            f.close()
+            return x
+        else:
+            return self.f(inst, *args, **kwargs)
 
+class save_to_pickle(method_decorator):
+
+    def __call__(self, inst, *args, **kwargs):
+        import pickle
+        x = self.f(inst, *args, **kwargs)
+        full_pickle_path = self.get_full_pickle_path(inst, *args, **kwargs)
+        location = os.path.dirname(full_pickle_path)
+        if not os.path.exists(location):
+            os.makedirs(location)
+        f = open(full_pickle_path, 'wb')
+        pickle.dump(x, f)
+        f.close()
+        return x
 
 save_and_memoize = compose(key, compose(cache, save_to_file))
 memoize = compose(key, cache)

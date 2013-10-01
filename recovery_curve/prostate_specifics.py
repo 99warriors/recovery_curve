@@ -284,7 +284,7 @@ class pops(keyed_object):
 
     @staticmethod
     def print_f(x):
-        return '%.4f, %.4f, %.f4' % (x.pop_a, x.pop_b, x.pop_c)
+        return '%.4f, %.4f, %.4f' % (x.pop_a, x.pop_b, x.pop_c)
 
     @staticmethod
     def read_f(full_path):
@@ -312,10 +312,10 @@ class train_shape_pops_f(possibly_cached):
     read_f = staticmethod(pops.read_f)
 
     @save_and_memoize
-    #@read_from_file
+    @read_from_file
     def __call__(self, data):
         avg_shape = aggregate_shape_f()(data)
-        a,b,c = get_curve_abc(1.0, avg_shape[avg_shape.index != 0])
+        a,b,c = get_curve_abc(1.0, avg_shape)
         return pops(a,b,c)
 
 class train_better_pops_f(possibly_cached):
@@ -337,7 +337,7 @@ class train_better_pops_f(possibly_cached):
     read_f = staticmethod(pops.read_f)
 
     @save_and_memoize
-    #@read_from_file
+    @read_from_file
     def __call__(self, data):
         """
         averages curves, and then fits a curve to it
@@ -361,7 +361,7 @@ class train_better_pops_f(possibly_cached):
                     if not np.isnan(v):
                         error = error + pow(fitted_val - v, 2)
                 """
-            print error
+            #print error
             return error
 
         import scipy.optimize
@@ -429,7 +429,7 @@ class get_diffcovs_posterior_f(possibly_cached):
         self.get_pops_f, self.hypers, self.iters, self.chains, self.seed = get_pops_f, hypers, iters, chains, seed
 
     @save_and_memoize
-#    @read_from_file
+    @read_from_file
     def __call__(self, data):
         pops = self.get_pops_f(data)
         pops_path = self.get_pops_f.full_path_f(data)
@@ -888,6 +888,8 @@ class get_data_f(possibly_cached):
 
     @save_and_memoize
     #@read_from_file
+    @read_from_pickle
+    @save_to_pickle
     def __call__(self, pid_iterator):
         l = []
 
@@ -948,7 +950,8 @@ class filtered_get_data_f(keyed_object):
     read_f = staticmethod(read_diffcovs_data)
 
     @save_and_memoize
-    #@read_from_file
+    @read_from_pickle
+    @save_to_pickle
     def __call__(self, _data):
         def is_ok(datum):
             try:
@@ -994,7 +997,8 @@ class get_data_fold_training(possibly_cached):
         self.fold_i, self.fold_k = fold_i, fold_k
 
     @save_and_memoize
-    #@read_from_file
+    @read_from_pickle
+    @save_to_pickle
     def __call__(self, _data):
         return data([datum for datum,i in zip(_data, range(len(_data))) if i%self.fold_k != self.fold_i])
             
@@ -1019,7 +1023,8 @@ class get_data_fold_testing(possibly_cached):
         self.fold_i, self.fold_k = fold_i, fold_k
 
     @save_and_memoize
-    #@read_from_file
+    @read_from_pickle
+    @save_to_pickle
     def __call__(self, _data):
         return data([datum for datum,i in zip(_data, range(len(_data))) if i%self.fold_k == self.fold_i])
             
@@ -1250,6 +1255,7 @@ def the_f(t, s, a, b, c):
     return s * ( (1.0-a) - (1.0-a)*(b) * math.exp(-1.0*t/c))
 
 def g_a(pop_a, B_a, xa):
+    pdb.set_trace()
     return logistic(pop_a + xa.dot(B_a))
                  
 def g_b(pop_b, B_b, xb):
@@ -1264,7 +1270,7 @@ def get_curve_abc(s, curve):
     def obj_f(x):
         error = 0.0
         for time, value in curve.iteritems():
-            if not np.isnan(value):
+            if not np.isnan(value) and time != 0:
                 error += pow(the_f(time, s, x[0], x[1], x[2]) - value, 2)
         return error
     x, f, d = scipy.optimize.fmin_l_bfgs_b(obj_f, np.array([0.5, 0.5, 2.0]), approx_grad = True, bounds = [(0.00,1.0),[0.00,1.0],[0.01,None]])
