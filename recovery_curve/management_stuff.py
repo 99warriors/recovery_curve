@@ -59,40 +59,36 @@ class do_nothing_adapter(print_adapter):
     def __call__(self, x, full_path):
         pass
 
-class call_and_save(object):
+def compose(f,g):
     """
-    decorator for functions that does file based memoizing
+    function composition for functions taking only 1 argument
     """
+    def composed(x):
+        return f(g(x))
+
+    return composed
+
+
+class method_decorator(object):
+
     def __init__(self, f):
         self.f = f
+
+    def __get__(self, inst, cls):
+        return functools.partial(self, inst)
+
+class read_from_file(method_decorator):
 
     def __call__(self, inst, *args, **kwargs):
         location = inst.location_f(*args, **kwargs)
         key = inst.key_f(*args, **kwargs)
         full_path = '%s/%s' % (location, key)
-        if os.path.exists(full_path) and not inst.to_recalculate:
-            x = set_location_dec(set_hard_coded_key_dec(inst.read_f, key), location)(full_path)
+        if os.path.exists(full_path):
+            return set_location_dec(set_hard_coded_key_dec(inst.read_f, key), location)(full_path)
         else:
-            #x = set_location_dec(set_hard_coded_key_dec(self.f, key), location)(inst, *args, **kwargs)
-            x = self.f(inst, *args, **kwargs)
-            if not os.path.exists(location):
-                os.makedirs(location)
-            inst.print_handler_f(x, full_path)
-        try:
-            x.set_creator(inst)
-        except Exception:
-            pass
-        return x
+            return self.f(inst, *args, **kwargs)
 
-    def __get__(self, inst, cls):
-        return functools.partial(self, inst)
-
-class call_and_save_no_memoize(object):
-    """
-    decorator that only saves, does not try to check if object is in file already
-    """
-    def __init__(self, f):
-        self.f = f
+class save_to_file(method_decorator):
 
     def __call__(self, inst, *args, **kwargs):
         location = inst.location_f(*args, **kwargs)
@@ -101,86 +97,62 @@ class call_and_save_no_memoize(object):
         x = self.f(inst, *args, **kwargs)
         if not os.path.exists(location):
             os.makedirs(location)
-
         inst.print_handler_f(x, full_path)
-        try:
-            x.set_creator(inst)
-        except Exception:
-            pass
-
         return x
 
-    def __get__(self, inst, cls):
-        return functools.partial(self, inst)
-
-class call_and_key(object):
-    """
-    decorator that just sets the key.  sets location too if possible(factory has location_f defined)
-    """
-    def __init__(self, f):
-        self.f = f
+class key(method_decorator):
 
     def __call__(self, inst, *args, **kwargs):
-        key = inst.key_f(*args, **kwargs)
-        x = set_hard_coded_key_dec(self.f, key)(inst, *args, **kwargs)
+        x = self.f(inst, *args, **kwargs)
         try:
             location = inst.location_f(*args, **kwargs)
-        except AttributeError:
-            pass
         except NotImplementedError:
+            # didn't define location_f for that factory
             pass
         else:
-            x.set_location(location)
+            try:
+                x.set_location(location)
+            except AttributeError:
+                # returned object isn't a keyed_object
+                pass
+        key = inst.key_f(*args, **kwargs)
+        try:
+            x.set_hard_coded_key(key)
+        except AttributeError:
+            # returned object isn't a keyed_object
+            pass
         try:
             x.set_creator(inst)
-        except Exception:
+        except AttributeError:
             pass
         return x
+            
 
-    def __get__(self, inst, cls):
-        return functools.partial(self, inst)
+class cache(method_decorator):
 
-class call_and_cache(object):
-    """
-    decorator for functions that does dictionary based memoizing
-    """
     def __init__(self, f):
         self.f = f
         self.cache = {}
 
     def __call__(self, inst, *args, **kwargs):
-        """
-        call_and_cache __call__
-        """
         key = inst.key_f(*args, **kwargs)
         try:
             x = self.cache[key]
-            print 'FOUND'
         except KeyError:
-            x = set_hard_coded_key_dec(self.f, key)(inst, *args, **kwargs)
+            x = self.f(inst, *args, **kwargs)
             self.cache[key] = x
-        try:
-            x.set_hard_coded_key(key)
-        except AttributeError:
-            pass
-        try:
-            location = inst.location_f(*args, **kwargs)
-        except AttributeError:
-            pass
-        else:
-            x.set_location(location)
-        try:
-            x.set_creator(inst)
-        except Exception:
-            pass
-
         return x
 
-    def __get__(self, inst, cls):
-        return functools.partial(self, inst)
 
 
 
+save_and_memoize = compose(key, compose(cache, save_to_file))
+memoize = compose(key, cache)
+
+def add_braces(f):
+    def deced(*args, **kwargs):
+        return '(%s)' % f(*args, **kwargs)
+    return deced
 
 class raise_if_na(object):
     """
@@ -213,14 +185,15 @@ class keyed_object(object):
         self.hard_coded_key = hard_coded_key
 
     def get_introspection_key(self):
-        print type(self)
         raise NotImplementedError
+
 
     def get_key(self):
         try:
             return self.get_hard_coded_key()
         except AttributeError:
-            return self.get_introspection_key()
+            #return self.get_introspection_key()
+            return '(%s)' % self.get_introspection_key()
 
     def get_location(self):
         return self.location
@@ -240,27 +213,26 @@ class keyed_object(object):
     def __cmp__(self, other):
         return self.get_key() == other.get_key()
 
+
+
 def not_implemented_f(*args, **kwargs):
     raise NotImplementedError
 
 class possibly_cached(keyed_object):
 
     def get_introspection_key(self):
-        print self
         raise NotImplementedError
 
     def key_f(self, *args, **kwargs):
         raise NotImplementedError
 
     def location_f(self, *args, **kwargs):
-        print self
+        #print self
         raise NotImplementedError
 
     print_handler_f = staticmethod(not_implemented_f)
 
     read_f = staticmethod(not_implemented_f)
-
-    to_recalculate = None
 
     def __call__(self, *args, **kwargs):
         raise NotImplementedError
@@ -271,34 +243,40 @@ class possibly_cached(keyed_object):
         """
         return '%s/%s' % (self.location_f(*args, **kwargs), self.key_f(*args, **kwargs))
 
-    @classmethod
-    def get_cls(cls):
-        return cls
-
-    def call_and_save(self, *args, **kwargs):
-        """
-        version of call where you explicitly specify that object should be saved
-        exact same as call_and_save.  later on figure out how to use the decorator version to do this
-        """
-        x = self.__call__(*args, **kwargs)
-        location = self.location_f(*args, **kwargs)
-        key = self.key_f(*args, **kwargs)
-        full_path = '%s/%s' % (location, key)
-        if os.path.exists(full_path) and not self.to_recalculate:
-            x = set_location_dec(set_hard_coded_key_dec(self.read_f, key), location)(full_path)
-        else:
-            x = self.__call__(*args, **kwargs)
-            if not os.path.exists(location):
-                os.makedirs(location)
-            self.print_handler_f(x, full_path)
-        return x
-
     def save(self, x):
         """
         assuming x has key and location set.  saves to file using the write_f for this factory
         for use when you only have access to the object returned by factory, not the arguments used to create it
         """
         self.print_handler_f(x, x.get_full_path())
+
+
+class composed_getter(object):
+
+    def __init__(self, attr_name):
+        self.attr_name = attr_name
+
+    def __get__(self, inst, cls):
+        return getattr(self.f, self.attr_name)
+
+class composed_factory(possibly_cached):
+
+    def __init__(self, f, g):
+        self.f, self.g = f,g
+
+    def __call__(self, *args, **kwargs):
+        return self.f(self.g(*args, **kwargs))
+
+    def get_introspection_key(self):
+        return '%s_%s' % (self.f.get_key(), self.g.get_key())
+
+    def key_f(self, *args, **kwargs):
+        return '%s_%s' % (self.get_key(), self.g.key_f(*args, **kwargs))
+
+    print_handler_f = composed_getter('print_handler_f')
+
+    read_f = composed_getter('read_f')
+
 
 
 class save_factory_base(possibly_cached):
@@ -309,7 +287,8 @@ class save_factory_base(possibly_cached):
     def key_f(self, item):
         return item.get_key()
 
-    @call_and_save
+    @save_to_file
+    @key
     def __call__(self, item):
         return item
         
@@ -339,5 +318,28 @@ def set_location_dec(f, location):
 
     return decorated_f
 
+def save_at_specified_path_dec(f, full_path):
+    """
+    decorator for factory f's __call__ that after __call__, saves object at specified path
+    """
+    def decorated_f(*args, **kwargs):
+        x = f(*args, **kwargs)
+        f.print_handler_f(x, full_path)
+        return x
+
+    return decorated_f
+
+def None_if_exception(f, val):
+    """
+    decorator that returns val if an exception is raised by function call
+    """
+    def decorated_f(*args, **kwargs):
+        try:
+            x = f(*args, **kwargs)
+        except Exception:
+            return None
+        else:
+            return x
+    return decorated_f
 
 
