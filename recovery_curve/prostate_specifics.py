@@ -1,14 +1,3 @@
-
-
-data_home = './scratch2'
-train_diffcovs_r_script = './train_diffcovs_model.r'
-xs_file = '../raw_data/xs.csv'
-ys_folder = '../raw_data/series'
-all_pid_file = '../raw_data/pids.csv'
-times = [1,2,4,8,12,18,24,30,36,42,48]
-percentiles = [.25, .50, .75]
-
-
 from management_stuff import *
 import pandas
 import numpy as np
@@ -17,6 +6,8 @@ import math
 import matplotlib.pyplot as plt
 import matplotlib
 from matplotlib.backends.backend_pdf import PdfPages
+import itertools
+import global_stuff
 
 """
 read_fs
@@ -50,7 +41,7 @@ def read_diffcovs_data(folder):
     xbs_file = '%s/%s' % (folder, 'xbs.csv')
     xcs_file = '%s/%s' % (folder, 'xcs.csv')
     ss_file = '%s/%s' % (folder, 'ss.csv')
-    pids = pd.read_csv(pids_file, header=None, squeeze=True, converters={0:str})
+    pids = pd.read_csv(pids_file, header=None, squeeze=True, converters={0:str}, index_col=None)
     xas = pd.read_csv(xbs_file, header=0, index_col=0)
     xbs = pd.read_csv(xbs_file, header=0, index_col=0)
     xcs = pd.read_csv(xcs_file, header=0, index_col=0)
@@ -124,8 +115,12 @@ def write_Series(s, full_path):
     s.to_csv(full_path, header=True, index=True)
 
 def figure_to_pdf(fig, full_path):
-    pp = PdfPages(full_path)
-    plt.savefig(pp, format='pdf')
+    fig.savefig('%s.pdf' % full_path, format='PDF')
+
+def multiple_figures_to_pdf(fig_list, full_path):
+    pp = PdfPages('%s.pdf' % full_path)
+    for fig in fig_list:
+        pp.savefig(fig)
     pp.close()
 
 """
@@ -147,6 +142,14 @@ class keyed_Series(pandas.Series, keyed_object):
     pass
 
 
+class keyed_iterable(keyed_object):
+
+    def __init__(self, iterable):
+        self.iterable = iterable
+
+    def __iter__(self):
+        return self.iterable.__iter__()
+
 """
 id_iterators
 """
@@ -157,7 +160,7 @@ class all_ucla_pid_iterator(keyed_object):
         return 'all_ucla'
 
     def __init__(self):
-        self.pids = pandas.read_csv(all_pid_file, header=False, index_col=None, squeeze=True, converters={0:str}).tolist()
+        self.pids = pandas.read_csv(global_stuff.all_pid_file, header=False, index_col=None, squeeze=True, converters={0:str}).tolist()
 
     def __iter__(self):
         return iter(self.pids)
@@ -186,11 +189,14 @@ features
 
 class feat(keyed_object):
 
+    def to_normalize(self):
+        return True
+
     def __repr__(self):
         return self.get_key()
 
     def __hash__(self):
-        return self.get_key()
+        return hash(self.get_key())
 
     def __cmp__(self, other):
         try:
@@ -199,7 +205,10 @@ class feat(keyed_object):
             other_key = str(other)
         return self.get_key() == other_key
 
-class ones_f(keyed_object):
+class ones_f(feat):
+
+    def to_normalize(self):
+        return False
 
     def get_introspection_key(self):
         return 'ones_f'
@@ -238,7 +247,7 @@ class ucla_cov_f(feat):
     def __init__(self, which_cov):
         import pandas
         self.which_cov = which_cov
-        self.all_covs = pandas.read_csv(xs_file, index_col=0)
+        self.all_covs = pandas.read_csv(global_stuff.xs_file, index_col=0)
 
     @raise_if_na
     def __call__(self, pid):
@@ -256,6 +265,8 @@ class bin_f(feat):
     def __call__(self, pid):
         raw = self.backing_f(pid)
         return int(raw in self.bin)
+
+
 
 """
 predictor factories(Aka trainers) and predictor class definitions
@@ -300,11 +311,11 @@ class train_shape_pops_f(possibly_cached):
 
     read_f = staticmethod(pops.read_f)
 
-    to_recalculate = True
-
+    @save_and_memoize
+    #@read_from_file
     def __call__(self, data):
         avg_shape = aggregate_shape_f()(data)
-        a,b,c = get_curve_abc(1.0, avg_shape)
+        a,b,c = get_curve_abc(1.0, avg_shape[avg_shape.index != 0])
         return pops(a,b,c)
 
 class train_better_pops_f(possibly_cached):
@@ -325,10 +336,8 @@ class train_better_pops_f(possibly_cached):
 
     read_f = staticmethod(pops.read_f)
 
-    to_recalculate = False
-
-    @call_and_cache
-    @call_and_save
+    @save_and_memoize
+    #@read_from_file
     def __call__(self, data):
         """
         averages curves, and then fits a curve to it
@@ -340,8 +349,9 @@ class train_better_pops_f(possibly_cached):
             for datum in data:
                 fit_f = functools.partial(the_f, s=datum.s, a=a, b=b, c=c)
                 has = datum.ys.dropna()
-                fitted = pandas.Series(has.index,index=has.index).apply(fit_f)
-                diff_vect = (fitted - has)
+                not_zero = has[has.index != 0]
+                fitted = pandas.Series(not_zero.index,index=not_zero.index).apply(fit_f)
+                diff_vect = (fitted - not_zero)
                 this = diff_vect.dot(diff_vect)
                 error += this
                 
@@ -361,6 +371,10 @@ class train_better_pops_f(possibly_cached):
 
 class prior_predictor(keyed_object):
 
+    display_color = 'blue'
+
+    display_name = 'prior'
+
     def get_introspection_key(self):
         return '%s_%s' % 'priorpred', self.pops.get_key()
 
@@ -373,9 +387,9 @@ class prior_predictor(keyed_object):
 
 class get_prior_predictor_f(possibly_cached):
 
-    display_color = 'red'
+    display_color = prior_predictor.display_color
 
-    display_name = 'prior'
+    display_name = prior_predictor.display_name
 
     def get_introspection_key(self):
         return '%s_%s' % ('priorpred-f', self.get_pops_f.get_key())
@@ -410,26 +424,25 @@ class get_diffcovs_posterior_f(possibly_cached):
 
     read_f = staticmethod(read_posterior_traces)
 
-    to_recalculate = True
-
     def __init__(self, get_pops_f, hypers, iters, chains, seed):
-        self.r_script = train_diffcovs_r_script
+        self.r_script = global_stuff.train_diffcovs_r_script
         self.get_pops_f, self.hypers, self.iters, self.chains, self.seed = get_pops_f, hypers, iters, chains, seed
 
-    @call_and_save
+    @save_and_memoize
+#    @read_from_file
     def __call__(self, data):
-        pops = self.get_pops_f.call_and_save(data)
+        pops = self.get_pops_f(data)
         pops_path = self.get_pops_f.full_path_f(data)
-        data.get_creator().save(data)
+        #data.get_creator().save(data)
         data_path = data.get_full_path()
         hypers_save_f()(self.hypers)
         hypers_path = hypers_save_f().full_path_f(self.hypers)
         save_path = self.full_path_f(data)
         make_folder(save_path)
         import subprocess
-        cmd = '%s %s %s %s %s %d %d %d %s' % ('Rscript', self.r_script, pops_path, data_path, hypers_path, self.iters, self.chains, self.seed, save_path)
+        cmd = '%s \"%s\" \"%s\" \"%s\" \"%s\" %d %d %d \"%s\"' % ('Rscript', self.r_script, pops_path, data_path, hypers_path, self.iters, self.chains, self.seed, save_path)
         print cmd
-        #subprocess.call(cmd, shell=True)
+        subprocess.call(cmd, shell=True)
         posteriors = read_unheadered_posterior_traces(save_path)
         # set the column names of posterior traces
         a_datum = iter(data).next()
@@ -442,10 +455,106 @@ class get_diffcovs_posterior_f(possibly_cached):
         posteriors['phi_m'].columns = ['phi_m']
         return posteriors
 
+
+class plot_diffcovs_posterior_f(possibly_cached):
+    """
+    takes in traces, plots histogram of training folds from cv on data.  takes in data, cv_f, get_posterior_f
+    """
+    def get_introspection_key(self):
+        return '%s_%s_%s' % ('postplt', self.cv_f.get_key(), self.get_posterior_f.get_key())
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s' % (global_stuff.data_home, 'posterior_plots')
+
+    print_handler_f = staticmethod(multiple_figures_to_pdf)
+
+    def __init__(self, num_row, num_col, cv_f, get_posterior_f):
+        self.num_row, self.num_col = num_row, num_col
+        self.cv_f, self.get_posterior_f = cv_f, get_posterior_f
+
+    @save_to_file
+    def __call__(self, data):
+        """
+        output is a list of figures
+        """
+
+        roll = pp_roll(2,3)
+        xlim_left, xlim_right = -4, 4
+        B_bins = 20
+        phi_bins = 40
+        title_size = 3.5
+        posteriors = []
+        for train_data, test_data in self.cv_f(data):
+            posteriors.append(self.get_posterior_f(train_data))
+
+        B_a_iteritems = [posterior['B_a'].iteritems() for posterior in posteriors]
+        for feat_cols in itertools.izip(*B_a_iteritems):
+            ax = roll.get_axes()
+            for feat, col in feat_cols:
+                ax.hist(col, alpha=0.5, bins=B_bins)
+            ax.set_title('%s %s' % (str(feat), 'B_a'), fontdict={'fontsize':title_size})
+            ax.set_xlim(xlim_left, xlim_right)
+
+        roll.start_new_page()
+
+        B_b_iteritems = [posterior['B_b'].iteritems() for posterior in posteriors]
+        for feat_cols in itertools.izip(*B_b_iteritems):
+            ax = roll.get_axes()
+            for feat, col in feat_cols:
+                ax.hist(col, alpha=0.5, bins=B_bins)
+            ax.set_title('%s %s' % (str(feat), 'B_b'), fontdict={'fontsize':title_size})
+            ax.set_xlim(xlim_left, xlim_right)
+
+        roll.start_new_page()
+
+        B_c_iteritems = [posterior['B_c'].iteritems() for posterior in posteriors]
+        for feat_cols in itertools.izip(*B_c_iteritems):
+            ax = roll.get_axes()
+            for feat, col in feat_cols:
+                ax.hist(col, alpha=0.5, bins=B_bins)
+            ax.set_title('%s %s' % (str(feat), 'B_c'), fontdict={'fontsize':title_size})
+            ax.set_xlim(xlim_left, xlim_right)
+
+        roll.start_new_page()
+
+        phi_a_cols = [posterior['phi_a']['phi_a'] for posterior in posteriors]
+        ax = roll.get_axes()
+        for phi_a_col in phi_a_cols:
+            ax.hist(phi_a_col, alpha=0.5, bins=phi_bins)
+        ax.set_title('phi_a')
+
+        phi_b_cols = [posterior['phi_b']['phi_b'] for posterior in posteriors]
+
+        ax = roll.get_axes()
+        for phi_b_col in phi_b_cols:
+            ax.hist(phi_b_col, alpha=0.5, bins=phi_bins)
+        ax.set_title('phi_b')
+
+        phi_c_cols = [posterior['phi_c']['phi_c'] for posterior in posteriors]
+        ax = roll.get_axes()
+        for phi_c_col in phi_c_cols:
+            ax.hist(phi_c_col, alpha=0.5, bins=phi_bins)
+        ax.set_title('phi_c')
+
+        phi_m_cols = [posterior['phi_m']['phi_m'] for posterior in posteriors]
+        ax = roll.get_axes()
+        for phi_m_col in phi_m_cols:
+            ax.hist(phi_m_col, alpha=0.5, bins=phi_bins)
+        ax.set_title('phi_m')
+
+        return roll.figs
+
 class full_model_point_predictor(keyed_object):
     """
     given point estimates of posterior params, does prediction
     """
+    display_color = 'red'
+
+    display_name = 'full'
+
     def get_introspection_key(self):
         return '%s_%s_%s' % ('full_pred', self.params.get_key(), self.pops.get_key())
 
@@ -469,6 +578,7 @@ class get_param_mean_f(possibly_cached):
     def key_f(self, post_param):
         return '%s_%s' % (self.get_key(), post_param.get_key())
 
+    @memoize
     def __call__(self, post_params):
         return keyed_dict({p:v.apply(pandas.Series.mean, axis=0) for p,v in post_params.iteritems()})
         
@@ -477,9 +587,9 @@ class get_diffcovs_point_predictor_f(possibly_cached):
     """
     return trained object that makes point predictions
     """
-    display_color = 'blue'
+    display_color = full_model_point_predictor.display_color
 
-    display_name = 'full'
+    display_name = full_model_point_predictor.display_name
 
     def get_introspection_key(self):
         return '%s_%s_%s' % ('fullpred_f', self.get_diffcovs_posterior_f.get_key(), self.summarize_posterior_f.get_key())
@@ -502,6 +612,10 @@ class logreg_predictor(keyed_object):
     
     """
 
+    display_color = 'yellow'
+
+    display_name = 'logreg'
+
     def __repr__(self):
         return 'logreg'
 
@@ -518,9 +632,9 @@ class get_logreg_predictor_f(possibly_cached):
     """
     returns trained logreg predictor
     """
-    display_color = 'blue'
+    display_color = logreg_predictor.display_color
 
-    display_name = 'logreg'
+    display_name = logreg_predictor.display_name
 
     def get_introspection_key(self):
         return 'logpred_f'
@@ -558,20 +672,16 @@ class cross_validated_scores_f(possibly_cached):
         return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        return '%s/%s' % (data_home, 'scores')
+        return '%s/%s' % (global_stuff.data_home, 'scores')
 
     print_handler_f = staticmethod(write_DataFrame)
 
     read_f = staticmethod(read_DataFrame)
 
-    to_recalculate = True
-
     def __init__(self, get_predictor_f, cv_f, times):
         self.get_predictor_f, self.cv_f, self.times = get_predictor_f, cv_f, times
 
-
-    @call_and_cache
-    @call_and_save
+    @save_and_memoize
     def __call__(self, data):
         fold_scores = []
         for train_data, test_data in self.cv_f(data):
@@ -580,6 +690,51 @@ class cross_validated_scores_f(possibly_cached):
         return keyed_DataFrame(pandas.concat(fold_scores, axis=1))
 
 
+class plot_predictions_fig_f(possibly_cached):
+
+    def __init__(self, predictors):
+        self.predictors = predictors
+
+    def __call__(self, datum):
+        fig = plt.figure()
+        ax = fig.add_subplot(1,1,1)
+        ys = datum.ys.dropna()
+        for predictor in self.predictors:
+            pred_d = {}
+            for t,v in ys.iteritems():
+                try:
+                    pred_d[t] = predictor(datum,t)
+                except:
+                    pass
+            prediction = pandas.Series(pred_d)
+            add_series_to_ax(prediction, ax, predictor.display_color, predictor.display_name, 'solid')
+        add_series_to_ax(ys, ax, 'black', 'true', 'solid')
+        ax.set_title(datum.pid)
+        return fig
+
+class plot_all_predictions_fig_f(possibly_cached):
+
+    def get_introspection_key(self):
+        return '%s_%s' % (self.get_predictor_fs.get_key(), self.cv_f.get_key())
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s' % (global_stuff.data_home, 'prediction_plots')
+
+    print_handler_f = staticmethod(multiple_figures_to_pdf)
+
+    def __init__(self, get_predictor_fs, cv_f, times):
+        self.get_predictor_fs, self.cv_f, self.times = get_predictor_fs, cv_f, times
+
+    @save_to_file
+    def __call__(self, data):
+        figs = []
+        for train_data, test_data in self.cv_f(data):
+            predictors = keyed_list([get_predictor_f(train_data) for get_predictor_f in self.get_predictor_fs])
+            figs += [plot_predictions_fig_f(predictors)(datum) for datum in test_data]
+        return figs
 class cv_fold_f(possibly_cached):
     """
     returns (training,testing) folds as a list.  each element of list needs to be keyed
@@ -593,7 +748,7 @@ class cv_fold_f(possibly_cached):
     def __init__(self, fold_k):
         self.fold_k = fold_k
 
-    @call_and_key
+    @key
     def __call__(self, data):
         folds = keyed_list()
         for i in range(self.fold_k):
@@ -623,12 +778,14 @@ class performance_series_f(possibly_cached):
     def __init__(self, scores_getter_f, loss_f, percentiles):
         self.scores_getter_f, self.loss_f, self.percentiles = scores_getter_f, loss_f, percentiles
 
+    @save_and_memoize
     def __call__(self, data):
         # have raw scores for each patient
         scores = self.scores_getter_f(data)
         true_ys = pandas.DataFrame({datum.pid:datum.ys for datum in data})
         diff = (scores - true_ys).abs()
         losses = diff.apply(self.loss_f, axis=1)
+        losses = losses.loc[self.scores_getter_f.times]
         mean_losses = losses.apply(np.mean, axis=1)
         loss_percentiles = losses.apply(functools.partial(get_percentiles, percentiles=self.percentiles), axis=1)
         loss_percentiles['mean'] = mean_losses
@@ -639,26 +796,24 @@ class performance_series_f(possibly_cached):
         return '%s_%s_%s' % ('perf', self.scores_getter_f.get_key(), self.loss_f.get_key())
 
     def key_f(self, data):
-        return '%s_%s' % self.get_key(), data.get_key()
+        return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        '%s/%s' % (data.get_location(), tester_f.__class__.__name__)
+        return '%s/%s' % (data.get_location(), self.scores_getter_f.get_key())
 
     print_handler_f = staticmethod(write_DataFrame)
 
     read_f = staticmethod(read_DataFrame)
 
-    to_recalculate = False
+class model_comparer_f(possibly_cached):
+    """
+    hard code the loss functions used
+    """
 
-class between_model_performance_fig_f(possibly_cached):
-    """
-    returns a fig.  performance for several models, single loss function
-    had to pass in components of performance_series_getter bc i am varying trainer, which is input for those
-    """
     def __init__(self, trainers, cv_f, loss_f, percentiles, times):
         self.trainers, self.cv_f, self.loss_f, self.percentiles, self.times = trainers, cv_f, loss_f, percentiles, times
 
-    @call_and_save_no_memoize
+    @memoize
     def __call__(self, data):
         fig = plt.figure()
         ax = fig.add_subplot(1,1,1)
@@ -668,9 +823,9 @@ class between_model_performance_fig_f(possibly_cached):
             _performance_series_f = performance_series_f(score_getter, self.loss_f, self.percentiles)
             perfs = _performance_series_f(data)
             add_performances_to_ax(ax, perfs, trainer.display_color, trainer.display_name)
+        ax.legend()
         fig.show()
         return fig
-
 
     def get_introspection_key(self):
         return '%s_%s_%s_%s' % ('btwmodperf', self.trainers.get_key(), self.cv_f.get_key(), self.loss_f.get_key())
@@ -684,8 +839,6 @@ class between_model_performance_fig_f(possibly_cached):
     print_handler_f = staticmethod(figure_to_pdf)
 
     read_f = staticmethod(not_implemented_f)
-
-    to_recalculate = False
 
 
 """
@@ -703,7 +856,7 @@ class data(keyed_list):
     def get_introspection_key(self):
         return 'data'
 
-class s_f(keyed_object):
+class s_f(feat):
 
     def get_introspection_key(self):
         return '%s_%s' % ('s', self.ys_f.get_key())
@@ -721,24 +874,21 @@ class get_data_f(possibly_cached):
         self.x_abc_fs, self.s_f, self.ys_f = x_abc_fs, s_f, ys_f
 
     def get_introspection_key(self):
-        return '%s_%s_%s_%s' % ('data', self.x_abc_fs.get_key(), self.s_f.get_key(), self.ys_f.get_key())
+        return '%s_%s_%s' % ('data', self.x_abc_fs.get_key(), self.ys_f.get_key())
 
     def key_f(self, pid_iterator):
         return '%s_%s' % (self.get_key(), pid_iterator.get_key())
 
     def location_f(self, pid_iterator):
-        return '%s/%s/%s' % (data_home, 'data', self.get_key())
+        return '%s/%s/%s' % (global_stuff.data_home, 'data', self.get_key())
 
     print_handler_f = staticmethod(folder_adapter(write_diffcovs_data))
 
     read_f = staticmethod(read_diffcovs_data)
 
-    to_recalculate = False
-
-    @call_and_cache
-    @call_and_save
+    @save_and_memoize
+    #@read_from_file
     def __call__(self, pid_iterator):
-
         l = []
 
         for pid in pid_iterator:
@@ -755,6 +905,32 @@ class get_data_f(possibly_cached):
                 l.append(datum(pid, xa, xb, xc, s, ys))
         l = sorted(l, key = lambda x: x.pid)
         return data(keyed_list(l))
+
+
+class normalized_data_f(possibly_cached):
+
+    def get_introspection_key(self):
+        return 'normf'
+
+    def key_f(self, d):
+        return '%s_%s' % (self.get_key(), d.get_key())
+
+    @key
+    def __call__(self, d):
+        def applier(s):
+            print s.name, s.name.to_normalize()
+            if s.name.to_normalize():
+                return (s - pandas.Series.mean(s)) / pandas.Series.std(s)
+            else:
+                return s
+        xas = pandas.DataFrame({p.pid:p.xa for p in d})
+        xbs = pandas.DataFrame({p.pid:p.xa for p in d})
+        xcs = pandas.DataFrame({p.pid:p.xa for p in d})
+        normalized_xas = xas.apply(applier, axis=1)
+        normalized_xbs = xbs.apply(applier, axis=1)
+        normalized_xcs = xcs.apply(applier, axis=1)
+        l = data([datum(_datum.pid, normalized_xas[_datum.pid],normalized_xbs[_datum.pid],normalized_xcs[_datum.pid],_datum.s, _datum.ys) for _datum in d])
+        return l
                 
 class filtered_get_data_f(keyed_object):
 
@@ -765,16 +941,14 @@ class filtered_get_data_f(keyed_object):
         return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        return '%s/%s/%s' % (data_home, 'filtered_data', data.get_key())
+        return '%s/%s/%s' % (global_stuff.data_home, 'filtered_data', data.get_key())
 
     print_handler_f = staticmethod(folder_adapter(write_diffcovs_data))
 
     read_f = staticmethod(read_diffcovs_data)
 
-    to_recalculate = False
-
-    @call_and_cache
-    @call_and_save
+    @save_and_memoize
+    #@read_from_file
     def __call__(self, _data):
         def is_ok(datum):
             try:
@@ -816,12 +990,11 @@ class get_data_fold_training(possibly_cached):
 
     read_f = staticmethod(read_diffcovs_data)
 
-    to_recalculate = False
-
     def __init__(self, fold_i, fold_k):
         self.fold_i, self.fold_k = fold_i, fold_k
 
-    @call_and_cache
+    @save_and_memoize
+    #@read_from_file
     def __call__(self, _data):
         return data([datum for datum,i in zip(_data, range(len(_data))) if i%self.fold_k != self.fold_i])
             
@@ -842,12 +1015,11 @@ class get_data_fold_testing(possibly_cached):
 
     read_f = staticmethod(read_diffcovs_data)
 
-    to_recalculate = True
-
     def __init__(self, fold_i, fold_k):
         self.fold_i, self.fold_k = fold_i, fold_k
 
-    @call_and_cache
+    @save_and_memoize
+    #@read_from_file
     def __call__(self, _data):
         return data([datum for datum,i in zip(_data, range(len(_data))) if i%self.fold_k == self.fold_i])
             
@@ -871,13 +1043,12 @@ class get_dataframe_f(possibly_cached):
 
     read_f = staticmethod(read_DataFrame)
 
-    to_recalculate = True
-
     def __init__(self, fs):
         self.fs = fs
 
-    @call_and_cache
-    @call_and_cache
+
+    @save_and_memoize
+    @read_from_file
     def __call__(self, pid_iterator):
         """
         get_dataframe_f __call__
@@ -917,9 +1088,19 @@ class score_modifier_f(keyed_object):
     def __call__(self, s):
         return (s+self.c) / (1.0+self.c)
 
+class after_0_ys_f(possibly_cached):
+
+    def __init__(self, ys_f):
+        self.ys_f = ys_f
+
+    def __call__(pid):
+        raw = self.ys_f(pid)
+        return raw[scaled.index != 0]
 
 class modified_ys_f(possibly_cached):
-
+    """
+    this will return values at all times, not just those > 0
+    """
     def get_introspection_key(self):
         return '%s_%s_%s' % ('modys', self.ys_f.get_key(), self.score_modifier_f.get_key())
 
@@ -929,8 +1110,7 @@ class modified_ys_f(possibly_cached):
     def __call__(self, pid):
         raw = self.ys_f(pid)
         scaled = raw.apply(self.score_modifier_f)
-        ans = scaled[scaled.index != 0]
-        return pandas.Series({k:v for k,v in ans.iteritems()})
+        return pandas.Series({k:v for k,v in scaled.iteritems()})
         return ans
 
 class ys_f(keyed_object):
@@ -945,7 +1125,7 @@ class ys_f(keyed_object):
     def __init__(self, which_function):
         import pandas
         function_name = ys_f.function_names[which_function]
-        raw_file = '%s/%s.csv' % (ys_folder, function_name)
+        raw_file = '%s/%s.csv' % (global_stuff.ys_folder, function_name)
         self.which_function = which_function
         self.dump = pandas.read_csv(raw_file, index_col=0, header=0)
 
@@ -974,13 +1154,11 @@ class hypers_save_f(save_factory_base):
     """
         
     def location_f(self, item):
-        return '%s/%s' % (data_home, 'hypers')
+        return '%s/%s' % (global_stuff.data_home, 'hypers')
 
     print_handler_f = staticmethod(string_adapter(hypers_print_f))
 
     read_f = staticmethod(hypers_read_f)
-
-    to_recalculate = True
 
 """
 related to plotting
@@ -994,7 +1172,7 @@ class aggregate_curve_f(possibly_cached):
         return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        return '%s/%s' % (data_home, 'aggregate_curves')
+        return '%s/%s' % (global_stuff.data_home, 'aggregate_curves')
 
     print_handler_f = staticmethod(write_Series)
 
@@ -1015,7 +1193,7 @@ class aggregate_shape_f(possibly_cached):
         return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        return '%s/%s' % (data_home, 'aggregate_shapes')
+        return '%s/%s' % (global_stuff.data_home, 'aggregate_shapes')
 
     print_handler_f = staticmethod(write_Series)
 
@@ -1026,6 +1204,34 @@ class aggregate_shape_f(possibly_cached):
         mean_shape = all_ys.apply(np.mean, axis=1)
         return keyed_Series(mean_shape)
 
+
+class figure_combiner_f(possibly_cached):
+    """
+    accepts iterator, fig_creator_f, parsing function that takes output of iterator, figures out what is 'data' and what is 'how'
+    parsing function returns 2 lists for use as *args.  
+    """
+    def get_introspection_key(self):
+        return self.base_fig_creator.get_key()
+
+    def key_f(self, iterator):
+        return iterator.get_key()
+        return '%s_%s' % (self.get_key(), iterator.get_key())
+
+    def location_f(self, iterator):
+        return '%s/%s' % (global_stuff.data_home, 'multiple_figs')
+
+    print_handler_f = staticmethod(multiple_figures_to_pdf)
+
+    def __init__(self, base_fig_creator, parsing_f):
+        self.base_fig_creator, self.parsing_f = base_fig_creator, parsing_f
+
+    def __call__(self, iterator):
+        figs = []
+        for stuff in iterator:
+            how, which = self.parsing_f(stuff)
+            figs.append(self.base_fig_creator(*how)(*which))
+        return figs
+
 """
 helpers
 """
@@ -1033,7 +1239,7 @@ helpers
 def add_performances_to_ax(ax, perfs, color, name):
     add_series_to_ax(perfs['mean'], ax, color, name, 'dashed')
     percentiles = perfs[[x for x in perfs.columns if x != 'mean']]
-    fixed = functools.partial(add_series_to_ax, ax=ax, color=color, label=name, linestyle='solid')
+    fixed = functools.partial(add_series_to_ax, ax=ax, color=color, label=None, linestyle='solid')
     percentiles.apply(fixed, axis=0)
     return ax
 
@@ -1073,10 +1279,17 @@ class hard_coded_f(object):
         return self.val
 
 
+def get_categorical_fs(backing_f, bins):
+    """
+    given list of bins, backing feature, returns list of bin features
+    """
+    return keyed_list([bin_f(backing_f, bin) for bin in bins])
+
 def get_percentiles(l, percentiles):
     s_l = sorted(l.dropna())
-    num = len(l)
+    num = len(s_l)
     return pandas.Series([s_l[int((p*num)+1)-1] for p in percentiles],index=percentiles)
+
 
 def logistic(x):
     return 1.0 / (1 + np.exp(-x))
@@ -1098,7 +1311,7 @@ def train_logistic_model(X, Y):
     return pandas.Series(ans, index=X.index)
 
 def get_feature_series(pid, fs):
-    return pandas.Series({f.get_key():f(pid) for f in fs})    
+    return pandas.Series({f:f(pid) for f in fs})    
 
 
 def make_folder(folder):
@@ -1142,3 +1355,38 @@ class equals_bin(object):
         return string.join([str(v) for v in self.in_vals], sep='_')
 
 
+class pp_roll(object):
+    """
+    object to which you can keep requesting axes, and it fits multiple per page
+    it keeps a list of figures you can access
+    """
+
+    def __init__(self, num_rows, num_cols):
+        self.num_rows, self.num_cols = num_rows, num_cols
+        self.figure_limit = num_rows * num_cols
+        self.cur_fig_num = -1
+        self.figs = []
+        self.start_new_page()
+
+    def start_new_page(self):
+        if self.cur_fig_num != 0:
+            self.figs.append(plt.figure())
+            self.cur_fig_num = 0
+
+    def get_axes(self):
+        if self.cur_fig_num >= self.figure_limit:
+            self.start_new_page()
+        ax = self.figs[-1].add_subplot(self.num_rows, self.num_cols, self.cur_fig_num+1)
+        self.cur_fig_num = self.cur_fig_num + 1
+        return ax
+
+            
+
+class my_iter_apply(object):
+
+    def __init__(self, f, base_iter):
+        self.base_iter, self.f = base_iter, f
+
+    def __iter__(self):
+        for x in self.base_iter:
+            yield self.f(*x)
