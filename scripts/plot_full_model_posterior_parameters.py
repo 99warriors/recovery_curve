@@ -6,7 +6,9 @@ import itertools
 import pdb
 from recovery_curve.management_stuff import *
 
-def plot_full_model_posterior_parameters(the_iter):
+def plot_full_model_posterior_parameters(iter_module):
+    
+    the_iter = iter_module.get_iter()
 
     for pid_iterator, filtered_data_f, diffcovs_iter, diffcovs_numchains, diffcovs_seed, perf_percentiles, perf_times, get_pops_f, summarize_f, cv_f, ys_f, hypers, x_abc_f, loss_f in the_iter:
 
@@ -18,6 +20,6 @@ def plot_full_model_posterior_parameters(the_iter):
         ps.plot_diffcovs_posterior_f(3, 2, cv_f, get_posterior_f)(filtered_data)
 
 if __name__ == '__main__':
-    iter_module = sys.argv[1]
-    the_iter = importlib.import_module(iter_module).the_iter
-    plot_full_model_posterior_parameters(the_iter)
+    iter_module_name = sys.argv[1]
+    iter_module = importlib.import_module(iter_module_name)
+    plot_full_model_posterior_parameters(iter_module)

@@ -195,16 +195,27 @@ class feat(keyed_object):
     def __repr__(self):
         return self.get_key()
 
+    
+    def __eq__(self, other):
+        try:
+            return self.get_key() == other.get_key()
+        except:
+            return self.get_key() == str(other)
+    
     def __hash__(self):
         return hash(self.get_key())
-
+    
+"""
     def __cmp__(self, other):
+        print 'cmp1', self.get_key()
         try:
             other_key = other.get_key()
         except AttributeError:
+            pdb.set_trace()
             other_key = str(other)
+        print 'cmp2', self.get_key(), other_key
         return self.get_key() == other_key
-
+"""
 class ones_f(feat):
 
     def to_normalize(self):
@@ -215,6 +226,9 @@ class ones_f(feat):
 
     def __call__(self, pid):
         return 1
+
+    def get_introspection_key(self):
+        return 'ones_f'
 
 class ucla_treatment_f(feat):
 
@@ -429,8 +443,10 @@ class get_diffcovs_posterior_f(possibly_cached):
         self.get_pops_f, self.hypers, self.iters, self.chains, self.seed = get_pops_f, hypers, iters, chains, seed
 
     @save_and_memoize
-    @read_from_file
+    @read_from_pickle
+    @save_to_pickle
     def __call__(self, data):
+        pdb.set_trace()
         pops = self.get_pops_f(data)
         pops_path = self.get_pops_f.full_path_f(data)
         #data.get_creator().save(data)
@@ -444,6 +460,7 @@ class get_diffcovs_posterior_f(possibly_cached):
         print cmd
         subprocess.call(cmd, shell=True)
         posteriors = read_unheadered_posterior_traces(save_path)
+        posteriors = read_posterior_traces(save_path)
         # set the column names of posterior traces
         a_datum = iter(data).next()
         posteriors['B_a'].columns = a_datum.xa.index
@@ -485,8 +502,9 @@ class plot_diffcovs_posterior_f(possibly_cached):
         xlim_left, xlim_right = -4, 4
         B_bins = 20
         phi_bins = 40
-        title_size = 3.5
+        title_size = 5.5
         posteriors = []
+        alpha=0.25
         for train_data, test_data in self.cv_f(data):
             posteriors.append(self.get_posterior_f(train_data))
 
@@ -494,7 +512,7 @@ class plot_diffcovs_posterior_f(possibly_cached):
         for feat_cols in itertools.izip(*B_a_iteritems):
             ax = roll.get_axes()
             for feat, col in feat_cols:
-                ax.hist(col, alpha=0.5, bins=B_bins)
+                ax.hist(col, alpha=alpha, bins=B_bins)
             ax.set_title('%s %s' % (str(feat), 'B_a'), fontdict={'fontsize':title_size})
             ax.set_xlim(xlim_left, xlim_right)
 
@@ -504,7 +522,7 @@ class plot_diffcovs_posterior_f(possibly_cached):
         for feat_cols in itertools.izip(*B_b_iteritems):
             ax = roll.get_axes()
             for feat, col in feat_cols:
-                ax.hist(col, alpha=0.5, bins=B_bins)
+                ax.hist(col, alpha=alpha, bins=B_bins)
             ax.set_title('%s %s' % (str(feat), 'B_b'), fontdict={'fontsize':title_size})
             ax.set_xlim(xlim_left, xlim_right)
 
@@ -514,7 +532,7 @@ class plot_diffcovs_posterior_f(possibly_cached):
         for feat_cols in itertools.izip(*B_c_iteritems):
             ax = roll.get_axes()
             for feat, col in feat_cols:
-                ax.hist(col, alpha=0.5, bins=B_bins)
+                ax.hist(col, alpha=alpha, bins=B_bins)
             ax.set_title('%s %s' % (str(feat), 'B_c'), fontdict={'fontsize':title_size})
             ax.set_xlim(xlim_left, xlim_right)
 
@@ -523,26 +541,26 @@ class plot_diffcovs_posterior_f(possibly_cached):
         phi_a_cols = [posterior['phi_a']['phi_a'] for posterior in posteriors]
         ax = roll.get_axes()
         for phi_a_col in phi_a_cols:
-            ax.hist(phi_a_col, alpha=0.5, bins=phi_bins)
+            ax.hist(phi_a_col, alpha=alpha, bins=phi_bins)
         ax.set_title('phi_a')
 
         phi_b_cols = [posterior['phi_b']['phi_b'] for posterior in posteriors]
 
         ax = roll.get_axes()
         for phi_b_col in phi_b_cols:
-            ax.hist(phi_b_col, alpha=0.5, bins=phi_bins)
+            ax.hist(phi_b_col, alpha=alpha, bins=phi_bins)
         ax.set_title('phi_b')
 
         phi_c_cols = [posterior['phi_c']['phi_c'] for posterior in posteriors]
         ax = roll.get_axes()
         for phi_c_col in phi_c_cols:
-            ax.hist(phi_c_col, alpha=0.5, bins=phi_bins)
+            ax.hist(phi_c_col, alpha=alpha, bins=phi_bins)
         ax.set_title('phi_c')
 
         phi_m_cols = [posterior['phi_m']['phi_m'] for posterior in posteriors]
         ax = roll.get_axes()
         for phi_m_col in phi_m_cols:
-            ax.hist(phi_m_col, alpha=0.5, bins=phi_bins)
+            ax.hist(phi_m_col, alpha=alpha, bins=phi_bins)
         ax.set_title('phi_m')
 
         return roll.figs
@@ -888,7 +906,7 @@ class get_data_f(possibly_cached):
 
     @save_and_memoize
     #@read_from_file
-    @read_from_pickle
+    #@read_from_pickle
     @save_to_pickle
     def __call__(self, pid_iterator):
         l = []
@@ -900,11 +918,12 @@ class get_data_f(possibly_cached):
                 xc = get_feature_series(pid, self.x_abc_fs.xc_fs)
                 s = self.s_f(pid)
                 ys = self.ys_f(pid)
+                after_0_ys = ys[ys.index != 0]
             except Exception, e:
-                print e
+                print e, '2'
                 pass
             else:
-                l.append(datum(pid, xa, xb, xc, s, ys))
+                l.append(datum(pid, xa, xb, xc, s, after_0_ys))
         l = sorted(l, key = lambda x: x.pid)
         return data(keyed_list(l))
 
@@ -950,7 +969,89 @@ class filtered_get_data_f(keyed_object):
     read_f = staticmethod(read_diffcovs_data)
 
     @save_and_memoize
-    @read_from_pickle
+    @save_to_pickle
+    def __call__(self, _data):
+        def is_ok(datum):
+            try:
+                if sum([x > (datum.s + 0.05) for x in datum.ys]) >= 2:
+                    raise Exception
+                a,b,c = get_curve_abc(datum.s, datum.ys)
+                error = 0.0
+                for t,v in datum.ys.iteritems():
+                    fit_val = the_f(t, datum.s, a, b, c)
+                    error += abs(fit_val - v)
+                if error / sum(datum.ys.notnull()) > 0.065:
+                    raise Exception
+                if sum(datum.ys.notnull()) < 8:
+                    raise Exception
+                if datum.s < 0.1:
+                    raise Exception
+                
+            except Exception:
+                return False
+            else:
+                return True
+        return data(filter(is_ok, _data))
+
+
+class medium_filtered_get_data_f(keyed_object):
+
+    def get_introspection_key(self):
+        return 'medfilt'
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s/%s' % (global_stuff.data_home, 'filtered_data', data.get_key())
+
+    print_handler_f = staticmethod(folder_adapter(write_diffcovs_data))
+
+    read_f = staticmethod(read_diffcovs_data)
+
+    @save_and_memoize
+    @save_to_pickle
+    def __call__(self, _data):
+        def is_ok(datum):
+            try:
+                if sum([x > (datum.s + 0.05) for x in datum.ys]) >= 2:
+                    raise Exception
+                a,b,c = get_curve_abc(datum.s, datum.ys)
+                error = 0.0
+                for t,v in datum.ys.iteritems():
+                    fit_val = the_f(t, datum.s, a, b, c)
+                    error += abs(fit_val - v)
+                if error / sum(datum.ys.notnull()) > 0.072:
+                    raise Exception
+                if sum(datum.ys.notnull()) < 6:
+                    raise Exception
+                if datum.s < 0.1:
+                    raise Exception
+                
+            except Exception:
+                return False
+            else:
+                return True
+        return data(filter(is_ok, _data))
+
+
+            
+class old_filtered_get_data_f(keyed_object):
+
+    def get_introspection_key(self):
+        return 'oldfilt'
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s/%s' % (global_stuff.data_home, 'filtered_data', data.get_key())
+
+    print_handler_f = staticmethod(folder_adapter(write_diffcovs_data))
+
+    read_f = staticmethod(read_diffcovs_data)
+
+    @save_and_memoize
     @save_to_pickle
     def __call__(self, _data):
         def is_ok(datum):
@@ -964,18 +1065,13 @@ class filtered_get_data_f(keyed_object):
                     error += abs(fit_val - v)
                 if error / sum(datum.ys.notnull()) > 0.08:
                     raise Exception
-                if sum(datum.ys.notnull()) < 8:
-                    raise Exception
-                if datum.s < 0.15:
-                    raise Exception
-                
             except Exception:
                 return False
             else:
                 return True
-        return data(filter(is_ok, _data))
+        ans = data(filter(is_ok, _data))
+        return ans
 
-            
 
 
 class get_data_fold_training(possibly_cached):
@@ -997,7 +1093,7 @@ class get_data_fold_training(possibly_cached):
         self.fold_i, self.fold_k = fold_i, fold_k
 
     @save_and_memoize
-    @read_from_pickle
+    #@read_from_pickle
     @save_to_pickle
     def __call__(self, _data):
         return data([datum for datum,i in zip(_data, range(len(_data))) if i%self.fold_k != self.fold_i])
@@ -1023,7 +1119,7 @@ class get_data_fold_testing(possibly_cached):
         self.fold_i, self.fold_k = fold_i, fold_k
 
     @save_and_memoize
-    @read_from_pickle
+    #@read_from_pickle
     @save_to_pickle
     def __call__(self, _data):
         return data([datum for datum,i in zip(_data, range(len(_data))) if i%self.fold_k == self.fold_i])
@@ -1095,12 +1191,15 @@ class score_modifier_f(keyed_object):
 
 class after_0_ys_f(possibly_cached):
 
+    def get_introspection_key(self):
+        return '%s_%s' % ('after0', self.ys_f.get_key())
+
     def __init__(self, ys_f):
         self.ys_f = ys_f
 
-    def __call__(pid):
+    def __call__(self, pid):
         raw = self.ys_f(pid)
-        return raw[scaled.index != 0]
+        return raw[raw.index != 0]
 
 class modified_ys_f(possibly_cached):
     """
@@ -1255,7 +1354,6 @@ def the_f(t, s, a, b, c):
     return s * ( (1.0-a) - (1.0-a)*(b) * math.exp(-1.0*t/c))
 
 def g_a(pop_a, B_a, xa):
-    pdb.set_trace()
     return logistic(pop_a + xa.dot(B_a))
                  
 def g_b(pop_b, B_b, xb):
@@ -1396,3 +1494,12 @@ class my_iter_apply(object):
     def __iter__(self):
         for x in self.base_iter:
             yield self.f(*x)
+
+def get_feature_set_iterator(*args):
+    """
+    given list of iterators, each of which iterate over keyed_lists of features, gives iterator over flattened cross_product of those iterators, with the key of returned feature list set to the concatenation of individual keys.  adds offset_feature to feature set
+    """
+    import itertools
+    def f(inner_args):
+        return set_hard_coded_key_dec(keyed_list, '_'.join(itertools.imap(lambda x:x.get_key(), inner_args)))(itertools.chain(itertools.chain(*inner_args),[ones_f()]))
+    return itertools.imap(f, itertools.product(*args))

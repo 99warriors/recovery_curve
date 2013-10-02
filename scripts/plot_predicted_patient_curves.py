@@ -6,10 +6,9 @@ import itertools
 import pdb
 from recovery_curve.management_stuff import *
 
-iter_module = sys.argv[1]
-the_iter = importlib.import_module(iter_module).the_iter
+def plot_predicted_patient_curves(iter_module):
 
-def plot_predicted_patient_curves(the_iter):
+    the_iter = iter_module.get_iter()
 
     for pid_iterator, filtered_data_f, diffcovs_iter, diffcovs_numchains, diffcovs_seed, perf_percentiles, perf_times, get_pops_f, summarize_f, cv_f, ys_f, hypers, x_abc_f, loss_f in the_iter:
 
@@ -24,6 +23,6 @@ def plot_predicted_patient_curves(the_iter):
         ps.plot_all_predictions_fig_f(ps.keyed_list([prior_trainer, logreg_trainer, diffcovs_trainer]), cv_f, perf_times)(filtered_data)
 
 if __name__ == '__main__':
-    iter_module = sys.argv[1]
-    the_iter = importlib.import_module(iter_module).the_iter
-    plot_predicted_patient_curves(the_iter)
+    iter_module_name = sys.argv[1]
+    iter_module = importlib.import_module(iter_module_name)
+    plot_predicted_patient_curves(iter_module)
