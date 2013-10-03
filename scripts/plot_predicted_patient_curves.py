@@ -6,11 +6,9 @@ import itertools
 import pdb
 from recovery_curve.management_stuff import *
 
-def plot_predicted_patient_curves(iter_module):
+def plot_predicted_patient_curves(the_iterable):
 
-    the_iter = iter_module.get_iter()
-
-    for pid_iterator, filtered_data_f, diffcovs_iter, diffcovs_numchains, diffcovs_seed, perf_percentiles, perf_times, get_pops_f, summarize_f, cv_f, ys_f, hypers, x_abc_f, loss_f in the_iter:
+    for pid_iterator, filtered_data_f, diffcovs_iter, diffcovs_numchains, diffcovs_seed, perf_percentiles, perf_times, get_pops_f, summarize_f, cv_f, ys_f, hypers, x_abc_f, loss_f in the_iterable:
 
         get_posterior_f = ps.get_diffcovs_posterior_f(get_pops_f, hypers, diffcovs_iter, diffcovs_numchains, diffcovs_seed)
         diffcovs_trainer = ps.get_diffcovs_point_predictor_f(get_posterior_f, summarize_f)
@@ -25,4 +23,11 @@ def plot_predicted_patient_curves(iter_module):
 if __name__ == '__main__':
     iter_module_name = sys.argv[1]
     iter_module = importlib.import_module(iter_module_name)
-    plot_predicted_patient_curves(iter_module)
+    the_iterable = iter_module.the_iterable
+    try:
+        job_n = int(sys.argv[2])
+        log_folder = sys.argv[3]
+    except Exception, e:
+        plot_predicted_patient_curves(the_iterable)
+    else:
+        ps.run_iter_f_parallel_dec(ps.override_sysout_dec(plot_predicted_patient_curves, log_folder), job_n)(the_iterable)

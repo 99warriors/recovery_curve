@@ -442,11 +442,11 @@ class get_diffcovs_posterior_f(possibly_cached):
         self.r_script = global_stuff.train_diffcovs_r_script
         self.get_pops_f, self.hypers, self.iters, self.chains, self.seed = get_pops_f, hypers, iters, chains, seed
 
-    @save_and_memoize
+#    @save_and_memoize
     @read_from_pickle
+    @save_to_file
     @save_to_pickle
     def __call__(self, data):
-        pdb.set_trace()
         pops = self.get_pops_f(data)
         pops_path = self.get_pops_f.full_path_f(data)
         #data.get_creator().save(data)
@@ -1499,7 +1499,52 @@ def get_feature_set_iterator(*args):
     """
     given list of iterators, each of which iterate over keyed_lists of features, gives iterator over flattened cross_product of those iterators, with the key of returned feature list set to the concatenation of individual keys.  adds offset_feature to feature set
     """
-    import itertools
     def f(inner_args):
         return set_hard_coded_key_dec(keyed_list, '_'.join(itertools.imap(lambda x:x.get_key(), inner_args)))(itertools.chain(itertools.chain(*inner_args),[ones_f()]))
     return itertools.imap(f, itertools.product(*args))
+
+def get_gapped_iterable(the_iter, k, n):
+    return itertools.imap(lambda x: x[0], itertools.ifilter(lambda x:x[1]%n==k, zip(the_iter, itertools.count(0))))
+
+def run_iter_f_parallel_dec(f, job_n):
+    """
+    for a function that accepts only a single iterator, runs it in parallel.
+    """
+    def dec_f(the_iterable):
+        jobs = []
+        for job_i in xrange(job_n):
+            the_iterable_this_job = ps.get_gapped_iterable(the_iterable, job_i, job_n)
+            p = multiprocessing.Process(target=plot_model_performances, args=(the_iterable_this_job,))
+            jobs.append(p)
+            p.start()
+        [p.join() for p in jobs]
+    
+    return dec_f
+
+def override_sysout_dec(f, log_folder):
+    """
+    if calling a function as a multiprocessing process, want to override sysout so that outputs goes to a process-specific log file
+    """
+    def dec_f(*args, **kwargs):
+        import sys
+        log_file = '%s/%s_%s.log' % (log_folder, f.__name__, os.getpid())
+        sys.stdout = open(log_file, 'w')
+        return f(*args, **kwargs)
+
+    return dec_f
+
+def run_experiments(f):
+    """
+    assumes f takes in iterator, sys.argv[1] has an iterable instance called the_iter
+    sys.argv[2] and sys.argv[3] contain the job_k and job_n, if script will be run in parallel
+    """
+    iter_module_name = sys.argv[1]
+    iter_module = importlib.import_module(iter_module_name)
+    try:
+        job_k, job_n = int(sys.argv[2]), int(sys.argv[3])
+        the_iter_this_job = ps.get_gapped_iter(iter_module.the_iter, job_k, job_n)
+        p = multiprocessing.Process(target=plot_model_performances, args=(the_iter_this_job,))
+        p.start()
+    except Exception, e:
+        the_iter = iter_module.the_iter
+        f(the_iter)
