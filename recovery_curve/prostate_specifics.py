@@ -8,6 +8,8 @@ import matplotlib
 from matplotlib.backends.backend_pdf import PdfPages
 import itertools
 import global_stuff
+import multiprocessing
+
 
 """
 read_fs
@@ -420,7 +422,7 @@ class get_prior_predictor_f(possibly_cached):
 
 
 
-class get_diffcovs_posterior_f(possibly_cached):
+class get_diffcovs_posterior_f(possibly_cached_folder):
     """
     returns posteriors for diffcovs model
     """
@@ -438,6 +440,9 @@ class get_diffcovs_posterior_f(possibly_cached):
 
     read_f = staticmethod(read_posterior_traces)
 
+    def has_file_content(self, data):
+        return os.path.exists('%s/%s' % (self.full_file_path_f(data), 'out_B_a.csv'))
+
     def __init__(self, get_pops_f, hypers, iters, chains, seed):
         self.r_script = global_stuff.train_diffcovs_r_script
         self.get_pops_f, self.hypers, self.iters, self.chains, self.seed = get_pops_f, hypers, iters, chains, seed
@@ -448,15 +453,17 @@ class get_diffcovs_posterior_f(possibly_cached):
     @save_to_pickle
     def __call__(self, data):
         pops = self.get_pops_f(data)
-        pops_path = self.get_pops_f.full_path_f(data)
+        pops_path = self.get_pops_f.full_file_path_f(data)
         #data.get_creator().save(data)
         data_path = data.get_full_path()
         hypers_save_f()(self.hypers)
-        hypers_path = hypers_save_f().full_path_f(self.hypers)
-        save_path = self.full_path_f(data)
+        hypers_path = hypers_save_f().full_file_path_f(self.hypers)
+        save_path = self.full_file_path_f(data)
         make_folder(save_path)
+        train_helper_file = '%s/%s/%s' % (global_stuff.home, 'recovery_curve', 'train_helper.r')
+        diffcovs_model_file = '%s/%s/%s' % (global_stuff.home, 'recovery_curve', 'full_model_diffcovs.stan')
         import subprocess
-        cmd = '%s \"%s\" \"%s\" \"%s\" \"%s\" %d %d %d \"%s\"' % ('Rscript', self.r_script, pops_path, data_path, hypers_path, self.iters, self.chains, self.seed, save_path)
+        cmd = '%s \"%s\" \"%s\" \"%s\" \"%s\" %d %d %d \"%s\" \"%s\" \"%s\"' % ('Rscript', self.r_script, pops_path, data_path, hypers_path, self.iters, self.chains, self.seed, save_path, train_helper_file, diffcovs_model_file)
         print cmd
         subprocess.call(cmd, shell=True)
         posteriors = read_unheadered_posterior_traces(save_path)
@@ -904,6 +911,7 @@ class get_data_f(possibly_cached):
 
     read_f = staticmethod(read_diffcovs_data)
 
+    @key
     @save_and_memoize
     #@read_from_file
     #@read_from_pickle
@@ -939,7 +947,7 @@ class normalized_data_f(possibly_cached):
     @key
     def __call__(self, d):
         def applier(s):
-            print s.name, s.name.to_normalize()
+            print s.name, s.name.to_normalize(), 'applier'
             if s.name.to_normalize():
                 return (s - pandas.Series.mean(s)) / pandas.Series.std(s)
             else:
@@ -953,7 +961,7 @@ class normalized_data_f(possibly_cached):
         l = data([datum(_datum.pid, normalized_xas[_datum.pid],normalized_xbs[_datum.pid],normalized_xcs[_datum.pid],_datum.s, _datum.ys) for _datum in d])
         return l
                 
-class filtered_get_data_f(keyed_object):
+class filtered_get_data_f(possibly_cached):
 
     def get_introspection_key(self):
         return 'filt'
@@ -968,7 +976,8 @@ class filtered_get_data_f(keyed_object):
 
     read_f = staticmethod(read_diffcovs_data)
 
-    @save_and_memoize
+    @key
+    @save_to_file
     @save_to_pickle
     def __call__(self, _data):
         def is_ok(datum):
@@ -994,7 +1003,7 @@ class filtered_get_data_f(keyed_object):
         return data(filter(is_ok, _data))
 
 
-class medium_filtered_get_data_f(keyed_object):
+class medium_filtered_get_data_f(possibly_cached):
 
     def get_introspection_key(self):
         return 'medfilt'
@@ -1009,7 +1018,8 @@ class medium_filtered_get_data_f(keyed_object):
 
     read_f = staticmethod(read_diffcovs_data)
 
-    @save_and_memoize
+    @key
+    @save_to_file
     @save_to_pickle
     def __call__(self, _data):
         def is_ok(datum):
@@ -1036,7 +1046,7 @@ class medium_filtered_get_data_f(keyed_object):
 
 
             
-class old_filtered_get_data_f(keyed_object):
+class old_filtered_get_data_f(possibly_cached):
 
     def get_introspection_key(self):
         return 'oldfilt'
@@ -1051,7 +1061,8 @@ class old_filtered_get_data_f(keyed_object):
 
     read_f = staticmethod(read_diffcovs_data)
 
-    @save_and_memoize
+    @key
+    @save_to_file
     @save_to_pickle
     def __call__(self, _data):
         def is_ok(datum):
@@ -1092,7 +1103,8 @@ class get_data_fold_training(possibly_cached):
     def __init__(self, fold_i, fold_k):
         self.fold_i, self.fold_k = fold_i, fold_k
 
-    @save_and_memoize
+    @key
+    @save_to_file
     #@read_from_pickle
     @save_to_pickle
     def __call__(self, _data):
@@ -1118,7 +1130,7 @@ class get_data_fold_testing(possibly_cached):
     def __init__(self, fold_i, fold_k):
         self.fold_i, self.fold_k = fold_i, fold_k
 
-    @save_and_memoize
+    @save_to_file
     #@read_from_pickle
     @save_to_pickle
     def __call__(self, _data):
@@ -1513,8 +1525,8 @@ def run_iter_f_parallel_dec(f, job_n):
     def dec_f(the_iterable):
         jobs = []
         for job_i in xrange(job_n):
-            the_iterable_this_job = ps.get_gapped_iterable(the_iterable, job_i, job_n)
-            p = multiprocessing.Process(target=plot_model_performances, args=(the_iterable_this_job,))
+            the_iterable_this_job = get_gapped_iterable(the_iterable, job_i, job_n)
+            p = multiprocessing.Process(target=f, args=(the_iterable_this_job,))
             jobs.append(p)
             p.start()
         [p.join() for p in jobs]
@@ -1527,8 +1539,10 @@ def override_sysout_dec(f, log_folder):
     """
     def dec_f(*args, **kwargs):
         import sys, os
-        log_file = '%s/%s_%s.log' % (log_folder, f.__name__, os.getpid())
-        sys.stdout = open(log_file, 'w')
+        stdout_log_file = '%s/%s_%s.stdout_log' % (log_folder, f.__name__, os.getpid())
+        sys.stdout = open(stdout_log_file, 'w')
+        stderr_log_file = '%s/%s_%s.stderr_log' % (log_folder, f.__name__, os.getpid())
+        sys.stderr = open(stderr_log_file, 'w')
         return f(*args, **kwargs)
 
     return dec_f

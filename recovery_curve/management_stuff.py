@@ -77,21 +77,11 @@ class method_decorator(object):
     def __get__(self, inst, cls):
         return functools.partial(self, inst)
 
-    def get_full_file_path(self, inst, *args, **kwargs):
-        location = inst.location_f(*args, **kwargs)
-        key = inst.key_f(*args, **kwargs)
-        return '%s/%s' % (location, key)
-
-    def get_full_pickle_path(self, inst, *args, **kwargs):
-        location = inst.location_f(*args, **kwargs)
-        key = inst.key_f(*args, **kwargs)
-        return '%s/%s.pickle' % (location, key)
-
 class read_from_file(method_decorator):
 
     def __call__(self, inst, *args, **kwargs):
-        full_path = self.get_full_file_path(inst, *args, **kwargs)
-        if os.path.exists(full_path):
+        if inst.has_file_content(*args, **kwargs):
+            full_path = inst.full_file_path_f(*args, **kwargs)
             return inst.read_f(full_path)
         else:
             return self.f(inst, *args, **kwargs)
@@ -100,7 +90,7 @@ class save_to_file(method_decorator):
 
     def __call__(self, inst, *args, **kwargs):
         import os
-        full_path = self.get_full_file_path(inst, *args, **kwargs)
+        full_path = inst.full_file_path_f(*args, **kwargs)
         location = os.path.dirname(full_path)
         x = self.f(inst, *args, **kwargs)
         if not os.path.exists(location):
@@ -157,7 +147,7 @@ class read_from_pickle(method_decorator):
 
     def __call__(self, inst, *args, **kwargs):
         import pickle
-        full_pickle_path = self.get_full_pickle_path(inst, *args, **kwargs)
+        full_pickle_path = inst.full_pickle_path_f(*args, **kwargs)
         if os.path.exists(full_pickle_path):
             f = open(full_pickle_path, 'rb')
             x = pickle.load(f)
@@ -171,7 +161,7 @@ class save_to_pickle(method_decorator):
     def __call__(self, inst, *args, **kwargs):
         import pickle
         x = self.f(inst, *args, **kwargs)
-        full_pickle_path = self.get_full_pickle_path(inst, *args, **kwargs)
+        full_pickle_path = inst.full_pickle_path_f(*args, **kwargs)
         location = os.path.dirname(full_pickle_path)
         if not os.path.exists(location):
             os.makedirs(location)
@@ -214,7 +204,7 @@ class keyed_object(object):
         return self.hard_coded_key
 
     def set_hard_coded_key(self, hard_coded_key):
-        print hard_coded_key
+        print hard_coded_key, 'hardcoded'
         assert type(hard_coded_key) == str
         self.hard_coded_key = hard_coded_key
 
@@ -271,11 +261,14 @@ class possibly_cached(keyed_object):
     def __call__(self, *args, **kwargs):
         raise NotImplementedError
 
-    def full_path_f(self, *args, **kwargs):
+    def full_file_path_f(self, *args, **kwargs):
         """
         refers to possible full path of the object returned by the function, not the function itself
         """
         return '%s/%s' % (self.location_f(*args, **kwargs), self.key_f(*args, **kwargs))
+
+    def full_pickle_path_f(self, *args, **kwargs):
+        return '%s.pickle' % self.full_file_path_f(*args, **kwargs)
 
     def save(self, x):
         """
@@ -283,6 +276,15 @@ class possibly_cached(keyed_object):
         for use when you only have access to the object returned by factory, not the arguments used to create it
         """
         self.print_handler_f(x, x.get_full_path())
+
+    def has_file_content(self, *args, **kwargs):
+        import os
+        return os.path.exists(self.full_file_path_f(*args, **kwargs))
+
+class possibly_cached_folder(possibly_cached):
+    
+    def has_content(self, *args, **kwargs):
+        raise NotImplementedError
 
 
 class composed_getter(object):
@@ -346,7 +348,7 @@ def set_location_dec(f, location):
         try:
             x.set_location(location)
         except AttributeError, e:
-            print e
+            print e, 'selocationdec'
             pass
         return x
 

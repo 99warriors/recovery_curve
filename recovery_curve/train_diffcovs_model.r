@@ -8,16 +8,21 @@ iters <- as.numeric(args[4])
 chains <- as.numeric(args[5])
 seed <- as.numeric(args[6])
 save_path <- args[7]
+train_helper_file <- args[8]
+model_file <- args[9]
 
 print('iters')
 print(iters)
 print('chains')
 print(chains)
 
-source('train_helper.r')
+#source('train_helper.r')
+
+source(train_helper_file)
+
 library(rstan)
 
-model_file <- './full_model_diffcovs.stan'
+#model_file <- './full_model_diffcovs.stan'
 
 pops <- read_in_pops(pops_file)
 
