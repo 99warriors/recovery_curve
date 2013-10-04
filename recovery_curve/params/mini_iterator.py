@@ -14,7 +14,7 @@ class the_iterable_cls(object):
 
     def __iter__(self):
         pid_iterators = [set_hard_coded_key_dec(ps.filtered_pid_iterator,'surgpids')(ps.all_ucla_pid_iterator(), ps.bin_f(ps.ucla_treatment_f(),ps.equals_bin([ps.ucla_treatment_f.surgery])))]
-        filtered_data_fs = [ps.old_filtered_get_data_f(), ps.medium_filtered_get_data_f(), ps.filtered_get_data_f()]
+        filtered_data_fs = [ps.old_filtered_get_data_f()]
         upscale_vals = [0]
         diffcovs_iters = [10000]
         diffcovs_numchains = [1]
@@ -28,10 +28,10 @@ class the_iterable_cls(object):
         ys_fs = [ps.modified_ys_f(ps.ys_f(ps.ys_f.sexual_function), ps.score_modifier_f(c)) for c in upscale_vals]
         loss_fs = [ps.scaled_logistic_loss_f(10.0)]
 
-
-        feature_sets_iterator = ps.get_feature_set_iterator([hard_coded_feature_sets.default_age_categorical_f, hard_coded_feature_sets.medium_age_categorical_f], [hard_coded_feature_sets.default_initial_categorical_f, hard_coded_feature_sets.high_initial_categorical_f])
+        feature_sets_iterator = [hard_coded_feature_sets.default_simple_indicators]
         
-        hypers = [hard_coded_hypers.default_hyper, hard_coded_hypers.medium_hyper, hard_coded_hypers.relaxed_hyper]
+        hypers = [hard_coded_hypers.default_hyper]
+
         x_abc_fs = ps.keyed_list([set_hard_coded_key_dec(ps.x_abc_fs, feature_set.get_key())(feature_set, feature_set, feature_set) for feature_set in feature_sets_iterator])
 
         return itertools.product(pid_iterators, filtered_data_fs, diffcovs_iters, diffcovs_numchains, diffcovs_seeds, perf_percentiles, perf_times, get_pops_fs, summarize_fs, cv_fs, ys_fs, hypers, x_abc_fs, loss_fs)

@@ -72,13 +72,18 @@ filtered_data = filtered_get_data_f()(normalized)
 print [_datum.xa for _datum in filtered_data]
 pdb.set_trace()
 
-
+small = get_data_fold_testing(0,6)(filtered_data)
 
 
 # defining trainers
 get_pops_f = train_better_pops_f()
 h = hypers(1,1,1,15,15,15,10)
-get_posterior_f = get_diffcovs_posterior_f(get_pops_f, h, 1000, 1, 1)
+get_posterior_f = get_pystan_diffcovs_posterior_f(get_pops_f, h, 500, 1, 1)
+post=get_posterior_f(small)
+
+pdb.set_trace()
+
+
 diffcovs_trainer = get_diffcovs_point_predictor_f(get_posterior_f, get_param_mean_f())
 
 prior_trainer = get_prior_predictor_f(get_pops_f)

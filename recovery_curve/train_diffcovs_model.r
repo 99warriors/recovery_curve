@@ -8,16 +8,23 @@ iters <- as.numeric(args[4])
 chains <- as.numeric(args[5])
 seed <- as.numeric(args[6])
 save_path <- args[7]
+train_helper_file <- args[8]
+model_file <- args[9]
+chain_id <- as.numeric(args[10])
 
 print('iters')
 print(iters)
 print('chains')
 print(chains)
 
-source('/Users/glareprotector/Documents/lab/glare_remix2/recovery_curve/train_helper.r')
+
+#source('train_helper.r')
+
+source(train_helper_file)
+
 library(rstan)
 
-model_file <- '/Users/glareprotector/Documents/lab/glare_remix2/recovery_curve/full_model_diffcovs.stan'
+
 
 pops <- read_in_pops(pops_file)
 
@@ -33,7 +40,7 @@ print(hypers)
 
 all_data <- c(pops, data, hypers)
 
-fit <- stan(file=model_file, data=all_data, iter=iters, chains=chains, verbose=F, seed=seed)
+fit <- stan(file=model_file, data=all_data, iter=iters, chains=chains, verbose=F, seed=seed, chain_id=chain_id)
 
 #dir.create(save_path)
 
