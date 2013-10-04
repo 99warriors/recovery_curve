@@ -16,20 +16,20 @@ class the_iterable_cls(object):
         pid_iterators = [set_hard_coded_key_dec(ps.filtered_pid_iterator,'surgpids')(ps.all_ucla_pid_iterator(), ps.bin_f(ps.ucla_treatment_f(),ps.equals_bin([ps.ucla_treatment_f.surgery])))]
         filtered_data_fs = [ps.old_filtered_get_data_f(), ps.medium_filtered_get_data_f(), ps.filtered_get_data_f()]
         upscale_vals = [0]
-        diffcovs_iters = [10000]
-        diffcovs_numchains = [1]
+        diffcovs_iters = [5000]
+        diffcovs_numchains = [4]
         diffcovs_seeds = [1]
         perf_percentiles = [[0.25, 0.5, 0.75]]
         perf_times = [[1,2,4,8,12,18,24,30,36,42,48]]
         get_pops_fs = [ps.train_better_pops_f()]
         summarize_fs = [ps.get_param_mean_f()]
-        cv_fs = [ps.cv_fold_f(3)]
-        upscale_vals = [0.0] #
+        cv_fs = [ps.cv_fold_f(4)]
+        upscale_vals = [0.0,0.2] #
         ys_fs = [ps.modified_ys_f(ps.ys_f(ps.ys_f.sexual_function), ps.score_modifier_f(c)) for c in upscale_vals]
         loss_fs = [ps.scaled_logistic_loss_f(10.0)]
 
 
-        feature_sets_iterator = ps.get_feature_set_iterator([hard_coded_feature_sets.default_age_categorical_f, hard_coded_feature_sets.medium_age_categorical_f], [hard_coded_feature_sets.default_initial_categorical_f, hard_coded_feature_sets.high_initial_categorical_f])
+        feature_sets_iterator = ps.get_feature_set_iterator([hard_coded_feature_sets.default_age_categorical_f, hard_coded_feature_sets.medium_age_categorical_f, hard_coded_feature_sets.high_age_categorical_f], [hard_coded_feature_sets.default_initial_categorical_f, hard_coded_feature_sets.high_initial_categorical_f, hard_coded_feature_sets.higher_initial_categorical_f, hard_coded_feature_sets.medium_initial_categorical_f, hard_coded_feature_sets.highminus_initial_categorical_f])
         
         hypers = [hard_coded_hypers.default_hyper, hard_coded_hypers.medium_hyper, hard_coded_hypers.relaxed_hyper]
         x_abc_fs = ps.keyed_list([set_hard_coded_key_dec(ps.x_abc_fs, feature_set.get_key())(feature_set, feature_set, feature_set) for feature_set in feature_sets_iterator])

@@ -329,6 +329,7 @@ class train_shape_pops_f(possibly_cached):
 
     read_f = staticmethod(pops.read_f)
 
+    @key
     @save_and_memoize
     @read_from_file
     def __call__(self, data):
@@ -354,6 +355,7 @@ class train_better_pops_f(possibly_cached):
 
     read_f = staticmethod(pops.read_f)
 
+    @key
     @save_and_memoize
     @read_from_file
     def __call__(self, data):
@@ -418,6 +420,7 @@ class get_prior_predictor_f(possibly_cached):
     def __init__(self, get_pops_f):
         self.get_pops_f = get_pops_f
 
+    @key
     def __call__(self, data):
         pops = self.get_pops_f(data)
         return prior_predictor(pops)
@@ -507,6 +510,7 @@ class get_pystan_diffcovs_posterior_f(possibly_cached_folder):
         self.get_pops_f, self.hypers, self.iters, self.chains, self.seed = get_pops_f, hypers, iters, chains, seed
 
 #    @save_and_memoize
+    @key
     @read_from_pickle
     @save_to_file
     @save_to_pickle
@@ -557,8 +561,8 @@ class get_pystan_diffcovs_posterior_f(possibly_cached_folder):
 
         diffcovs_model_file = '%s/%s/%s' % (global_stuff.home, 'recovery_curve', 'full_model_diffcovs.stan')
 
-        fit = pystan.stan(file=diffcovs_model_file, data=d, iter=self.iters, seed=self.seed)
-        pdb.set_trace()
+        fit = pystan.stan(file=diffcovs_model_file, data=d, iter=self.iters, seed=self.seed, chains=self.chains)
+
         traces = fit.extract(permuted=True)
         
         # need to convert arrays to dataframes, and give them the same indicies as in data
@@ -577,8 +581,6 @@ class get_pystan_diffcovs_posterior_f(possibly_cached_folder):
         posteriors['phi_c'].columns = ['phi_c']
         posteriors['phi_m'] = pandas.DataFrame(traces['phi_m'])
         posteriors['phi_m'].columns = ['phi_m']
-
-        pdb.set_trace()
 
         return posteriors
 
@@ -620,6 +622,7 @@ class plot_diffcovs_posterior_f(possibly_cached):
         self.num_row, self.num_col = num_row, num_col
         self.cv_f, self.get_posterior_f = cv_f, get_posterior_f
 
+    @key
     @save_to_file
     def __call__(self, data):
         """
@@ -724,6 +727,7 @@ class get_param_mean_f(possibly_cached):
     def key_f(self, post_param):
         return '%s_%s' % (self.get_key(), post_param.get_key())
 
+    @key
     @memoize
     def __call__(self, post_params):
         return keyed_dict({p:v.apply(pandas.Series.mean, axis=0) for p,v in post_params.iteritems()})
@@ -746,6 +750,7 @@ class get_diffcovs_point_predictor_f(possibly_cached):
     def __init__(self, get_diffcovs_posterior_f, summarize_posterior_f):
         self.get_diffcovs_posterior_f, self.summarize_posterior_f = get_diffcovs_posterior_f, summarize_posterior_f
 
+    @key
     def __call__(self, data):
         posteriors = self.get_diffcovs_posterior_f(data)
         params = self.summarize_posterior_f(posteriors)
@@ -791,6 +796,7 @@ class get_logreg_predictor_f(possibly_cached):
     def __init__(self, times):
         self.times = times
 
+    @key
     def __call__(self, _data):
         """
         for now, use only xa for prediction
@@ -827,6 +833,7 @@ class cross_validated_scores_f(possibly_cached):
     def __init__(self, get_predictor_f, cv_f, times):
         self.get_predictor_f, self.cv_f, self.times = get_predictor_f, cv_f, times
 
+    @key
     @save_and_memoize
     def __call__(self, data):
         fold_scores = []
@@ -924,6 +931,7 @@ class performance_series_f(possibly_cached):
     def __init__(self, scores_getter_f, loss_f, percentiles):
         self.scores_getter_f, self.loss_f, self.percentiles = scores_getter_f, loss_f, percentiles
 
+    @key
     @save_and_memoize
     def __call__(self, data):
         # have raw scores for each patient
@@ -931,7 +939,7 @@ class performance_series_f(possibly_cached):
         true_ys = pandas.DataFrame({datum.pid:datum.ys for datum in data})
         diff = (scores - true_ys).abs()
         losses = diff.apply(self.loss_f, axis=1)
-        losses = losses.loc[self.scores_getter_f.times]
+        losses = losses.ix[:,self.scores_getter_f.times]
         mean_losses = losses.apply(np.mean, axis=1)
         loss_percentiles = losses.apply(functools.partial(get_percentiles, percentiles=self.percentiles), axis=1)
         loss_percentiles['mean'] = mean_losses
@@ -959,6 +967,7 @@ class model_comparer_f(possibly_cached):
     def __init__(self, trainers, cv_f, loss_f, percentiles, times):
         self.trainers, self.cv_f, self.loss_f, self.percentiles, self.times = trainers, cv_f, loss_f, percentiles, times
 
+    @save_to_file
     @memoize
     def __call__(self, data):
         fig = plt.figure()
@@ -980,7 +989,7 @@ class model_comparer_f(possibly_cached):
         return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        return '%s/%s' % (data.get_location(), 'betweenmodel_perfs')
+        return '%s/%s' % (global_stuff.data_home,'betweenmodel_perfs')
 
     print_handler_f = staticmethod(figure_to_pdf)
 
@@ -1419,6 +1428,7 @@ class aggregate_curve_f(possibly_cached):
 
     read_f = staticmethod(read_Series)
 
+    @key
     def __call__(self, data):
         all_ys = pandas.DataFrame({datum.pid:datum.ys for datum in data})
         mean = all_ys.apply(np.mean, axis=1)
@@ -1440,6 +1450,7 @@ class aggregate_shape_f(possibly_cached):
 
     read_f = staticmethod(read_Series)
 
+    @key
     def __call__(self, data):
         all_ys = pandas.DataFrame({datum.pid:datum.ys/datum.s for datum in data})
         mean_shape = all_ys.apply(np.mean, axis=1)
@@ -1645,7 +1656,7 @@ def get_gapped_iterable(the_iter, k, n):
 
 def run_iter_f_parallel_dec(f, job_n):
     """
-    for a function that accepts only a single iterator, runs it in parallel.
+    for a function that accepts only a single iterable, runs it in parallel.
     """
     def dec_f(the_iterable):
         jobs = []
@@ -1656,6 +1667,17 @@ def run_iter_f_parallel_dec(f, job_n):
             p.start()
         [p.join() for p in jobs]
     
+    return dec_f
+
+def randomize_iterable_dec(f):
+    """
+    for a function that accepts only a single iterable, changes the iterable to a randomized list of the elements returned by iterable
+    """
+    def dec_f(the_iterable):
+        vals = [x for x in the_iterable]
+        import random
+        random.shuffle(vals)
+        return f(vals)
     return dec_f
 
 def override_sysout_dec(f, log_folder):
