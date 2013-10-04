@@ -16,7 +16,7 @@ class the_iterable_cls(object):
         pid_iterators = [set_hard_coded_key_dec(ps.filtered_pid_iterator,'surgpids')(ps.all_ucla_pid_iterator(), ps.bin_f(ps.ucla_treatment_f(),ps.equals_bin([ps.ucla_treatment_f.surgery])))]
         filtered_data_fs = [ps.old_filtered_get_data_f()]
         upscale_vals = [0]
-        diffcovs_iters = [10000]
+        diffcovs_iters = [1000]
         diffcovs_numchains = [1]
         diffcovs_seeds = [1]
         perf_percentiles = [[0.25, 0.5, 0.75]]
