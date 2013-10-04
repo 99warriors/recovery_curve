@@ -4,6 +4,37 @@ import matplotlib.pyplot as plt
 
 import pdb
 
+def f(x):
+    return x
+
+def g(x):
+    return x
+
+def applier(s):
+    pdb.set_trace()
+
+import pandas
+
+d = pandas.DataFrame({f:[1,2,3],g:[5,6,7]})
+
+#d.apply(applier)
+
+
+
+
+
+"""
+2 kinds of iterators
+1. iterate over (data, trainers).  to get this iterator, have to supply another iterator
+
+
+
+
+
+"""
+
+
+
 # getting data
 
 pids = all_ucla_pid_iterator()
@@ -11,12 +42,35 @@ surgery_pids = set_hard_coded_key_dec(filtered_pid_iterator,'surgpids')(pids, bi
 xa_fs = keyed_list([ucla_cov_f(ucla_cov_f.age), bin_f(ucla_cov_f(ucla_cov_f.psa), bin(0,20)), s_f(ys_f(ys_f.sexual_function)), ones_f()])
 xb_fs = xa_fs
 xc_fs = xa_fs
-#df = get_dataframe_f(xa_fs).call_and_save(surgery_pids)
+#df = save_to_file(get_dataframe_f(xa_fs)(surgery_pids)
+
+#df = get_dataframe_f(xa_fs)(surgery_pids)
+
+
+
 init = set_hard_coded_key_dec(s_f, 'init')(ys_f(ys_f.sexual_function))
 a_ys = modified_ys_f(ys_f(ys_f.sexual_function), score_modifier_f(0))
 gg=set_hard_coded_key_dec(x_abc_fs, 'feat')(xa_fs, xb_fs, xc_fs)
 data = get_data_f(gg, init, a_ys)(surgery_pids)
-filtered_data = filtered_get_data_f()(data)
+
+
+processor = composed_factory(normalized_data_f(), filtered_get_data_f())
+
+processed = processor(data)
+
+pdb.set_trace()
+
+print [_datum.xa for _datum in processed]
+
+#normalized = normalized_data_f()(data)
+
+
+
+
+filtered_data = filtered_get_data_f()(normalized)
+
+print [_datum.xa for _datum in filtered_data]
+pdb.set_trace()
 
 
 

@@ -14,10 +14,10 @@ print(iters)
 print('chains')
 print(chains)
 
-source('train_helper.r')
+source('/Users/glareprotector/Documents/lab/glare_remix2/recovery_curve/train_helper.r')
 library(rstan)
 
-model_file <- './full_model_diffcovs.stan'
+model_file <- '/Users/glareprotector/Documents/lab/glare_remix2/recovery_curve/full_model_diffcovs.stan'
 
 pops <- read_in_pops(pops_file)
 
@@ -34,5 +34,7 @@ print(hypers)
 all_data <- c(pops, data, hypers)
 
 fit <- stan(file=model_file, data=all_data, iter=iters, chains=chains, verbose=F, seed=seed)
+
+#dir.create(save_path)
 
 write_full_posterior_parameters(fit, save_path)
