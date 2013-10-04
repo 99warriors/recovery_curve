@@ -10,7 +10,7 @@ def plot_full_model_posterior_parameters(the_iterable):
     
     for pid_iterator, filtered_data_f, diffcovs_iter, diffcovs_numchains, diffcovs_seed, perf_percentiles, perf_times, get_pops_f, summarize_f, cv_f, ys_f, hypers, x_abc_f, loss_f in the_iterable:
 
-        get_posterior_f = ps.get_diffcovs_posterior_f(get_pops_f, hypers, diffcovs_iter, diffcovs_numchains, diffcovs_seed)
+        get_posterior_f = ps.get_pystan_diffcovs_posterior_f(get_pops_f, hypers, diffcovs_iter, diffcovs_numchains, diffcovs_seed)
         init_f = ps.set_hard_coded_key_dec(ps.s_f, 'init')(ys_f)
         data = ps.get_data_f(x_abc_f, init_f, ys_f)(pid_iterator)
         filtered_data = filtered_data_f(data)

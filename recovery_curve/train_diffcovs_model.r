@@ -10,6 +10,7 @@ seed <- as.numeric(args[6])
 save_path <- args[7]
 train_helper_file <- args[8]
 model_file <- args[9]
+chain_id <- as.numeric(args[10])
 
 print('iters')
 print(iters)
@@ -38,6 +39,6 @@ print(hypers)
 
 all_data <- c(pops, data, hypers)
 
-fit <- stan(file=model_file, data=all_data, iter=iters, chains=chains, verbose=F, seed=seed)
+fit <- stan(file=model_file, data=all_data, iter=iters, chains=chains, verbose=F, seed=seed, chain_id=chain_id)
 
 write_full_posterior_parameters(fit, save_path)

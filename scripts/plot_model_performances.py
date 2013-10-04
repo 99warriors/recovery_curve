@@ -11,7 +11,7 @@ def plot_model_performances(the_iterable):
     for pid_iterator, filtered_data_f, diffcovs_iter, diffcovs_numchains, diffcovs_seed, perf_percentiles, perf_times, get_pops_f, summarize_f, cv_f, ys_f, hypers, x_abc_f, loss_f in the_iterable:
 
         get_posterior_f = ps.get_diffcovs_posterior_f(get_pops_f, hypers, diffcovs_iter, diffcovs_numchains, diffcovs_seed)
-        diffcovs_trainer = ps.get_diffcovs_point_predictor_f(get_posterior_f, summarize_f)
+        diffcovs_trainer = ps.get_pystan_diffcovs_point_predictor_f(get_posterior_f, summarize_f)
         prior_trainer = ps.get_prior_predictor_f(get_pops_f)
         logreg_trainer = ps.get_logreg_predictor_f(perf_times)
         trainers = ps.keyed_list([prior_trainer, logreg_trainer, diffcovs_trainer])
