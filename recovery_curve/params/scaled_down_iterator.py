@@ -26,6 +26,9 @@ class the_iterable_cls(object):
         cv_fs = [ps.cv_fold_f(4)]
         upscale_vals = [0.0] #
         ys_fs = [ps.modified_ys_f(ps.ys_f(ps.ys_f.sexual_function), ps.score_modifier_f(c)) for c in upscale_vals]
+
+        actual_ys_f_shifts = [1]
+
         loss_fs = [ps.scaled_logistic_loss_f(10.0)]
 
 
@@ -34,6 +37,6 @@ class the_iterable_cls(object):
         hypers = [hard_coded_hypers.default_hyper, hard_coded_hypers.medium_hyper]
         x_abc_fs = ps.keyed_list([set_hard_coded_key_dec(ps.x_abc_fs, feature_set.get_key())(feature_set, feature_set, feature_set) for feature_set in feature_sets_iterator])
 
-        return itertools.product(pid_iterators, filtered_data_fs, diffcovs_iters, diffcovs_numchains, diffcovs_seeds, perf_percentiles, perf_times, get_pops_fs, summarize_fs, cv_fs, ys_fs, hypers, x_abc_fs, loss_fs)
+        return itertools.product(pid_iterators, filtered_data_fs, diffcovs_iters, diffcovs_numchains, diffcovs_seeds, perf_percentiles, perf_times, get_pops_fs, summarize_fs, cv_fs, ys_fs, hypers, x_abc_fs, loss_fs, actual_ys_f_shifts)
 
 the_iterable = the_iterable_cls()

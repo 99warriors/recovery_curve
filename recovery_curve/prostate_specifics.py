@@ -369,9 +369,8 @@ class train_better_pops_f(possibly_cached):
             for datum in data:
                 fit_f = functools.partial(the_f, s=datum.s, a=a, b=b, c=c)
                 has = datum.ys.dropna()
-                not_zero = has[has.index != 0]
-                fitted = pandas.Series(not_zero.index,index=not_zero.index).apply(fit_f)
-                diff_vect = (fitted - not_zero)
+                fitted = pandas.Series(has.index,index=has.index).apply(fit_f)
+                diff_vect = (fitted - has)
                 this = diff_vect.dot(diff_vect)
                 error += this
                 
@@ -763,7 +762,7 @@ class logreg_predictor(keyed_object):
     
     """
 
-    display_color = 'yellow'
+    display_color = 'orange'
 
     display_name = 'logreg'
 
@@ -862,6 +861,9 @@ class plot_predictions_fig_f(possibly_cached):
             prediction = pandas.Series(pred_d)
             add_series_to_ax(prediction, ax, predictor.display_color, predictor.display_name, 'solid')
         add_series_to_ax(ys, ax, 'black', 'true', 'solid')
+        ax.plot(-1,datum.s,'bo')
+        ax.set_xlim(-2,50)
+        ax.set_ylim(-0.1, 1.1)
         ax.set_title(datum.pid)
         return fig
 
@@ -978,6 +980,7 @@ class model_comparer_f(possibly_cached):
             _performance_series_f = performance_series_f(score_getter, self.loss_f, self.percentiles)
             perfs = _performance_series_f(data)
             add_performances_to_ax(ax, perfs, trainer.display_color, trainer.display_name)
+        ax.set_xlim(-1.0,50)
         ax.legend()
         fig.show()
         return fig
@@ -989,7 +992,7 @@ class model_comparer_f(possibly_cached):
         return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        return '%s/%s' % (global_stuff.data_home,'betweenmodel_perfs')
+        return '%s/%s/%s' % (global_stuff.data_home,'betweenmodel_perfs', data.get_key())
 
     print_handler_f = staticmethod(figure_to_pdf)
 
@@ -1005,6 +1008,14 @@ class datum(keyed_object):
     def __init__(self, pid, xa, xb, xc, s, ys):
         self.pid, self.xa, self.xb, self.xc, self.s, self.ys = pid, xa, xb, xc, s, ys
 
+    def __repr__(self):
+        return self.pid
+
+    def __eq__(self, other):
+        return self.pid == other.pid
+
+    def __hash__(self):
+        return hash(self.pid)
 
 class data(keyed_list):
 
@@ -1056,12 +1067,11 @@ class get_data_f(possibly_cached):
                 xc = get_feature_series(pid, self.x_abc_fs.xc_fs)
                 s = self.s_f(pid)
                 ys = self.ys_f(pid)
-                after_0_ys = ys[ys.index != 0]
             except Exception, e:
                 print e, '2'
                 pass
             else:
-                l.append(datum(pid, xa, xb, xc, s, after_0_ys))
+                l.append(datum(pid, xa, xb, xc, s, ys))
         l = sorted(l, key = lambda x: x.pid)
         return data(keyed_list(l))
 
@@ -1327,41 +1337,57 @@ related to ys_f, as in getting the series
 class score_modifier_f(keyed_object):
 
     def get_introspection_key(self):
-        return '%s_%.2f' % ('up', self.c)
+        if self.shift == 0:
+            return '%s_%.2f' % ('up', self.c)
+        else:
+            return '%s_%.2f_s%d' % ('up', self.c, self.shift)
 
-    def __init__(self, c):
-        self.c = c
+    def __init__(self, c, shift=0):
+        self.c, self.shift = c, shift
 
-    def __call__(self, s):
-        return (s+self.c) / (1.0+self.c)
+    def __call__(self, t, v):
+        return t-self.shift, ((v+self.c) / (1.0+self.c))
 
-class after_0_ys_f(possibly_cached):
+class actual_ys_f(possibly_cached):
 
     def get_introspection_key(self):
-        return '%s_%s' % ('after0', self.ys_f.get_key())
+        return '%s_%s_%d' % ('actys', self.ys_f.get_key(), self.shift)
 
-    def __init__(self, ys_f):
-        self.ys_f = ys_f
+    def __init__(self, ys_f, shift):
+        self.ys_f, self.shift = ys_f, shift
 
     def __call__(self, pid):
+        """
+        get rid of data at time 0 always, since times in ys_f are not shifted yet
+        then shift the remaining times
+        """
         raw = self.ys_f(pid)
-        return raw[raw.index != 0]
+        d = {}
+        for t,v in raw.iteritems():
+            if t != 0:
+                shifted_time = t - self.shift
+                if shifted_time >= 0:
+                    d[shifted_time] = v
+        return pandas.Series(d)
+        
 
 class modified_ys_f(possibly_cached):
     """
     this will return values at all times, not just those > 0
+    ERROR: this should actually accept a ys_f so that fxns like this can be composed
+    score modifier might also shift the times
     """
     def get_introspection_key(self):
         return '%s_%s_%s' % ('modys', self.ys_f.get_key(), self.score_modifier_f.get_key())
 
     def __init__(self, ys_f, score_modifier_f):
-        self.ys_f, self.score_modifier_f = ys_f, score_modifier_f
+        self.ys_f, self.score_modifier_f  = ys_f, score_modifier_f
 
     def __call__(self, pid):
         raw = self.ys_f(pid)
-        scaled = raw.apply(self.score_modifier_f)
-        return pandas.Series({k:v for k,v in scaled.iteritems()})
+        ans = pandas.Series(dict(self.score_modifier_f(k,v) for k,v in raw.iteritems()))
         return ans
+
 
 class ys_f(keyed_object):
 
@@ -1413,6 +1439,9 @@ class hypers_save_f(save_factory_base):
 """
 related to plotting
 """
+
+
+
 class aggregate_curve_f(possibly_cached):
 
     def get_introspection_key(self):
