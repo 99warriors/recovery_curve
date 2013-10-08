@@ -187,6 +187,57 @@ class filtered_pid_iterator(keyed_object):
             else:
                 yield pid
 
+
+class ys_bool_input_curve_f(keyed_object):
+    """
+    given curve = (s, ys), returns T/F
+    """
+    def get_introspection_key(self):
+        return '%s_%d_%.2f_%.2f_%d_%.2f' % ('sysboolf', self.min_data_points, self.max_avg_error, self.above_s_tol, self.above_s_max, self.min_s)
+
+    def __init__(self, min_data_points, max_avg_error, above_s_tol, above_s_max, min_s):
+        self.min_data_points, self.max_avg_error, self.above_s_tol, self.above_s_max, self.min_s = min_data_points, max_avg_error, above_s_tol, above_s_max, min_s
+
+    def __call__(self, s, ys):
+        has = ys.dropna()
+        if sum([x > (s + self.above_s_tol) for x in has]) >= self.above_s_max:
+            return False
+        a,b,c = get_curve_abc(s, ys)
+        fit_f = functools.partial(the_f, s=s, a=a, b=b, c=c)
+        fitted = pandas.Series(has.index,index=has.index).apply(fit_f)
+        error = (fitted - has).abs().sum()
+        if error / len(has) > self.max_avg_error:
+            return False
+        if len(has) < self.min_data_points:
+            return False
+        if s < self.min_s:
+            return False
+        return True
+
+
+
+
+
+
+class ys_bool_input_pid_f(keyed_object):
+    """
+    given parameters like tolerable error, number of points greater than s
+    gives function that returns bool given pid
+    filter_f operates on s, ys
+    """
+    def get_introspection_key(self):
+        return '%s_%s_%s' % (self.s_f.get_key(), self.actual_ys_f.get_key(), self.filter_f.get_key())
+
+    def __init__(self, s_f, actual_ys_f, filter_f):
+        self.s_f, self.actual_ys_f, self.filter_f = s_f, actual_ys_f, filter_f
+
+    def __call__(self, pid):
+        s = self.s_f(pid)
+        ys = self.actual_ys_f(pid)
+        return self.filter_f(s, ys)
+        
+
+
 """
 features
 """
@@ -1117,9 +1168,9 @@ class filtered_get_data_f(possibly_cached):
     read_f = staticmethod(read_diffcovs_data)
 
     @key
-    @read_from_pickle
-    @save_to_file
-    @save_to_pickle
+    #@read_from_pickle
+    #@save_to_file
+    #@save_to_pickle
     def __call__(self, _data):
         def is_ok(datum):
             try:
@@ -1204,9 +1255,9 @@ class old_filtered_get_data_f(possibly_cached):
     read_f = staticmethod(read_diffcovs_data)
 
     @key
-    @read_from_pickle
-    @save_to_file
-    @save_to_pickle
+    #@read_from_pickle
+    #@save_to_file
+    #@save_to_pickle
     def __call__(self, _data):
         def is_ok(datum):
             try:
@@ -1218,14 +1269,40 @@ class old_filtered_get_data_f(possibly_cached):
                     fit_val = the_f(t, datum.s, a, b, c)
                     error += abs(fit_val - v)
                 if error / sum(datum.ys.notnull()) > 0.08:
+                    #pdb.set_trace()
+                    assert sum(datum.ys.notnull()) == len(datum.ys)
                     raise Exception
             except Exception:
                 return False
             else:
                 return True
+        pdb.set_trace()
         ans = data(filter(is_ok, _data))
         return ans
 
+
+class generic_filtered_get_data_f(possibly_cached):
+
+    def get_introspection_key(self):
+        return '%s_%s' % ('filt', self.ys_bool_input_curve_f.get_key())
+
+    def key_f(self, _data):
+        return '%s_%s' % (self.get_key(), _data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s/%s' % (global_stuff.data_home, 'filtered_data', data.get_key())
+
+    print_handler_f = staticmethod(folder_adapter(write_diffcovs_data))
+
+    read_f = staticmethod(read_diffcovs_data)
+
+    def __init__(self, ys_bool_input_curve_f):
+        self.ys_bool_input_curve_f = ys_bool_input_curve_f
+
+    @key
+    def __call__(self, _data):
+        filter_f = compose_expanded_args(self.ys_bool_input_curve_f, lambda _datum: (_datum.s, _datum.ys))
+        return data(filter(filter_f, _data))
 
 
 class get_data_fold_training(possibly_cached):
@@ -1441,6 +1518,70 @@ related to plotting
 """
 
 
+class abc_vs_attributes_scatter_f(possibly_cached):
+
+    def get_introspection_key(self):
+        return '%s_%s_%s_%s' % ('abcplts', self.fs.get_key(), self.s_f.get_key(), self.actual_ys_f.get_key())
+
+    def key_f(self, pid_iterator):
+        return '%s_%s' % (self.get_key(), pid_iterator.get_key())
+
+    def location_f(self, pid_iterator):
+        return '%s/%s' % (global_stuff.data_home, 'abc_vs_attribute_scatters')
+
+    print_handler_f = staticmethod(multiple_figures_to_pdf)
+
+    def __init__(self, fs, s_f, actual_ys_f):
+        self.fs, self.s_f, self.actual_ys_f = fs, s_f, actual_ys_f
+
+    @save_to_file
+    def __call__(self, pid_iterator):
+        """
+        for each feature, get a matrix whose columns are abc's + the feature.  do this by joining 2 columns
+        filtering of pids is done outside(pid_iterator may be filtered) 
+        """
+        # first get the abc's
+        abc_d = {}
+        for pid in pid_iterator:
+            s = self.s_f(pid)
+            ys = self.actual_ys_f(pid)
+            a,b,c = get_curve_abc(s, ys)
+            abc_d[pid] = pandas.Series({'a':a, 'b':b,'c':c})
+        abc_df = pandas.DataFrame(abc_d)
+
+        # now, get a feature for each dataframe for joining
+
+        figs = []
+
+        for f in self.fs:
+            f_series_d = {}
+            for pid in pid_iterator:
+                try:
+                    val = f(pid)
+                except:
+                    pass
+                else:
+                    s_series_d[pid] = val
+            f_series = pandas.Series(f_series_d)
+            f_series = f_series.dropna()
+            f_series_df = pandas.DataFrame({f:f_series})
+            abcf_df = pandas.concat([abc_df, f_series_df], axis = 0, join='inner')
+            fig = plt.figure()
+            fig.suptitle('%s %s' % (pid_iterator.get_key(), f.get_key()))
+            a_ax = fig.add_subplot(1,1,1)
+            a_ax.scatter(abcf_df.loc['a'], abcf_df.loc[f])
+            a_ax.set_title('a')
+            b_ax = fig.add_subplot(1,1,1)
+            b_ax.scatter(abcf_df.loc['b'], abcf_df.loc[f])
+            b_ax.set_title('b')
+            c_ax = fig.add_subplot(1,1,1)
+            c_ax.scatter(abcf_df.loc['c'], abcf_df.loc[f])
+            c_ax.set_title('c')
+
+            figs.append(fig)
+
+        return figs
+
 
 class aggregate_curve_f(possibly_cached):
 
@@ -1545,7 +1686,7 @@ def get_curve_abc(s, curve):
     def obj_f(x):
         error = 0.0
         for time, value in curve.iteritems():
-            if not np.isnan(value) and time != 0:
+            if not np.isnan(value):
                 error += pow(the_f(time, s, x[0], x[1], x[2]) - value, 2)
         return error
     x, f, d = scipy.optimize.fmin_l_bfgs_b(obj_f, np.array([0.5, 0.5, 2.0]), approx_grad = True, bounds = [(0.00,1.0),[0.00,1.0],[0.01,None]])

@@ -68,6 +68,12 @@ def compose(f,g):
 
     return composed
 
+def compose_expanded_args(f,g):
+    """
+    compose functions where g returns multiple arguments, which are then expanded to fit arguments of f
+    """
+    def composed(*args):
+        return f(*(g(*args)))
 
 class method_decorator(object):
 
@@ -294,6 +300,7 @@ class composed_getter(object):
 
     def __get__(self, inst, cls):
         return getattr(self.f, self.attr_name)
+
 
 class composed_factory(possibly_cached):
 
