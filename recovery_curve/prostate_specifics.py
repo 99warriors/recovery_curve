@@ -54,7 +54,7 @@ def read_diffcovs_data(folder):
     l = []
     for pid, xa, xb, xc, s in zip(pids, xas.iteritems(), xbs.iteritems(), xcs.iteritems(), ss):
         p_ys_file = '%s/%s' % (ys_folder, pid)
-        p_ys = pd.read_csv(p_ys_file,header=None, index_col = 0, squeeze=True)
+        p_ys = pd.read_csv(p_ys_file,header=None, index_col = 0, squeeze=True).dropna()
         l.append(datum(pid, xa[1], xb[1], xc[1], s, p_ys))
     return data(l)
 
@@ -181,11 +181,31 @@ class filtered_pid_iterator(keyed_object):
         for pid in self.backing_iterator:
             try:
                 if not self.bool_f(pid):
-                    raise Exception
-            except Exception:
+                    raise my_Exception
+            except my_Exception:
                 pass
             else:
                 yield pid
+
+
+class is_good_pid(keyed_object):
+    
+    def get_introspection_key(self):
+        return 'isgood'
+
+    def __init__(self):
+        self.pids = pandas.read_csv(global_stuff.good_file, header=None,index_col=None, squeeze=True, converters={0:str}).tolist()
+
+    def __call__(self, pid):
+        return pid in self.pids
+        
+class is_medium_pid(keyed_object):
+    
+    def __init__(self):
+        self.pids = pandas.read_csv(global_stuff.medium_file, header=None,index_col=None, squeeze=True,converters={0:str}).tolist()
+
+    def __call__(self, pid):
+        return pid in self.pids
 
 
 class ys_bool_input_curve_f(keyed_object):
@@ -199,16 +219,15 @@ class ys_bool_input_curve_f(keyed_object):
         self.min_data_points, self.max_avg_error, self.above_s_tol, self.above_s_max, self.min_s = min_data_points, max_avg_error, above_s_tol, above_s_max, min_s
 
     def __call__(self, s, ys):
-        has = ys.dropna()
-        if sum([x > (s + self.above_s_tol) for x in has]) >= self.above_s_max:
+        if sum([x > (s + self.above_s_tol) for x in ys]) >= self.above_s_max:
             return False
         a,b,c = get_curve_abc(s, ys)
         fit_f = functools.partial(the_f, s=s, a=a, b=b, c=c)
-        fitted = pandas.Series(has.index,index=has.index).apply(fit_f)
-        error = (fitted - has).abs().sum()
-        if error / len(has) > self.max_avg_error:
+        fitted = pandas.Series(ys.index,index=ys.index).apply(fit_f)
+        error = (fitted - ys).abs().sum()
+        if error / len(ys) > self.max_avg_error:
             return False
-        if len(has) < self.min_data_points:
+        if len(ys) < self.min_data_points:
             return False
         if s < self.min_s:
             return False
@@ -419,9 +438,9 @@ class train_better_pops_f(possibly_cached):
             error = 0.0
             for datum in data:
                 fit_f = functools.partial(the_f, s=datum.s, a=a, b=b, c=c)
-                has = datum.ys.dropna()
-                fitted = pandas.Series(has.index,index=has.index).apply(fit_f)
-                diff_vect = (fitted - has)
+                ys = datum.ys
+                fitted = pandas.Series(ys.index,index=ys.index).apply(fit_f)
+                diff_vect = (fitted - ys)
                 this = diff_vect.dot(diff_vect)
                 error += this
                 
@@ -600,9 +619,9 @@ class get_pystan_diffcovs_posterior_f(possibly_cached_folder):
 
         d['ss'] = [a_datum.s for a_datum in data]
 
-        ls = reduce(lambda x, a_datum: x + [len(a_datum.ys.dropna())], data, [])
-        ts = reduce(lambda x, a_datum: x + a_datum.ys.dropna().index.tolist(), data, [])
-        vs = reduce(lambda x, a_datum: x + a_datum.ys.dropna().tolist(), data, [])
+        ls = reduce(lambda x, a_datum: x + [len(a_datum.ys)], data, [])
+        ts = reduce(lambda x, a_datum: x + a_datum.ys.index.tolist(), data, [])
+        vs = reduce(lambda x, a_datum: x + a_datum.ys.tolist(), data, [])
         d['ls'] = ls
         d['ts'] = ts
         d['vs'] = vs
@@ -854,8 +873,13 @@ class get_logreg_predictor_f(possibly_cached):
         Bs = {}
         xas = pandas.DataFrame({datum.pid:datum.xa for datum in _data})
         for time in self.times:
-            y = pandas.Series({datum.pid:datum.ys[time] for datum in _data})
-            y = y[y.notnull()]
+            y_d = {}
+            for datum in _data:
+                try:
+                    y_d[datum.pid] = datum.ys[time]
+                except KeyError:
+                    pass
+            y = pandas.Series(y_d)
             this_xas = xas[y.index]
             Bs[time] = train_logistic_model(this_xas, y)
         return logreg_predictor(pandas.DataFrame(Bs))
@@ -901,7 +925,7 @@ class plot_predictions_fig_f(possibly_cached):
     def __call__(self, datum):
         fig = plt.figure()
         ax = fig.add_subplot(1,1,1)
-        ys = datum.ys.dropna()
+        ys = datum.ys
         for predictor in self.predictors:
             pred_d = {}
             for t,v in ys.iteritems():
@@ -1083,7 +1107,10 @@ class s_f(feat):
 
     @raise_if_na
     def __call__(self, pid):
-        return self.ys_f(pid)[0]
+        try:
+            return self.ys_f(pid)[0]
+        except:
+            raise my_Exception
 
 class get_data_f(possibly_cached):
 
@@ -1109,6 +1136,10 @@ class get_data_f(possibly_cached):
     #@read_from_pickle
     @save_to_pickle
     def __call__(self, pid_iterator):
+        """
+        change so that get rid of any na's that may be in ys
+        """
+
         l = []
 
         for pid in pid_iterator:
@@ -1117,7 +1148,7 @@ class get_data_f(possibly_cached):
                 xb = get_feature_series(pid, self.x_abc_fs.xb_fs)
                 xc = get_feature_series(pid, self.x_abc_fs.xc_fs)
                 s = self.s_f(pid)
-                ys = self.ys_f(pid)
+                ys = self.ys_f(pid).dropna()
             except Exception, e:
                 print e, '2'
                 pass
@@ -1134,6 +1165,9 @@ class normalized_data_f(possibly_cached):
 
     def key_f(self, d):
         return '%s_%s' % (self.get_key(), d.get_key())
+
+    def location_f(self, d):
+        return d.get_location()
 
     @key
     def __call__(self, d):
@@ -1279,6 +1313,8 @@ class old_filtered_get_data_f(possibly_cached):
         pdb.set_trace()
         ans = data(filter(is_ok, _data))
         return ans
+
+
 
 
 class generic_filtered_get_data_f(possibly_cached):
@@ -1484,7 +1520,7 @@ class ys_f(keyed_object):
 
     def __call__(self, pid):
         import pdb
-        return self.dump[pid]
+        return self.dump[pid].dropna()
 
 
 """
@@ -1517,6 +1553,54 @@ class hypers_save_f(save_factory_base):
 related to plotting
 """
 
+class figs_with_avg_error_f(possibly_cached):
+    """
+    input is pid_iterator.  output is a bunch of figures with total error, avg error printed
+    also draw the fitted curve
+    """
+
+    def get_introspection_key(self):
+        return '%s_%s' % (self.s_f.get_key(), self.actual_ys_f.get_key())
+
+    def key_f(self, pid_iterator):
+        return '%s_%s' % (self.get_key(), pid_iterator.get_key())
+
+    def location_f(self, pid_iterator):
+        return '%s/%s' % (global_stuff.data_home, 'ys_plots')
+
+    print_handler_f = staticmethod(multiple_figures_to_pdf)
+
+    def __init__(self, s_f, actual_ys_f):
+        self.s_f, self.actual_ys_f = s_f, actual_ys_f
+
+#    @memoize
+    @save_to_file
+    def __call__(self, pid_iterator):
+        figs = keyed_list()
+        for pid in pid_iterator:
+            fig = plt.figure()
+            ax = fig.add_subplot(1,1,1)
+            try:
+                s = self.s_f(pid)
+                ys = self.actual_ys_f(pid)
+            except Exception, e:
+                pass
+            else:
+                add_series_to_ax(ys, ax, 'black', None, '--')
+                ax.plot(-1, s, 'bo')
+                ax.set_xlim(-2,50)
+                a,b,c = get_curve_abc(s, ys)
+                fit_f = functools.partial(the_f, s=s, a=a, b=b, c=c)
+                t_vals = range(50)
+                y_vals = [fit_f(t) for t in t_vals]
+                ax.plot(t_vals, y_vals, color='brown', linestyle='-')
+                fitted = pandas.Series(ys.index,index=ys.index).apply(fit_f)
+                error = (fitted - ys).abs().sum()
+                ax.set_title('%s %.2f %.2f'  % (pid, error, error/len(ys)))
+                ax.set_ylim(-0.1,1.1)
+                figs.append(fig)
+        return figs
+    
 
 class abc_vs_attributes_scatter_f(possibly_cached):
 
@@ -1534,6 +1618,7 @@ class abc_vs_attributes_scatter_f(possibly_cached):
     def __init__(self, fs, s_f, actual_ys_f):
         self.fs, self.s_f, self.actual_ys_f = fs, s_f, actual_ys_f
 
+    @memoize
     @save_to_file
     def __call__(self, pid_iterator):
         """
@@ -1558,24 +1643,23 @@ class abc_vs_attributes_scatter_f(possibly_cached):
             for pid in pid_iterator:
                 try:
                     val = f(pid)
-                except:
+                except my_Exception:
                     pass
                 else:
-                    s_series_d[pid] = val
+                    f_series_d[pid] = val
             f_series = pandas.Series(f_series_d)
-            f_series = f_series.dropna()
             f_series_df = pandas.DataFrame({f:f_series})
-            abcf_df = pandas.concat([abc_df, f_series_df], axis = 0, join='inner')
+            abcf_df = pandas.concat([abc_df, f_series_df.T], axis = 0, join='inner')
             fig = plt.figure()
             fig.suptitle('%s %s' % (pid_iterator.get_key(), f.get_key()))
-            a_ax = fig.add_subplot(1,1,1)
-            a_ax.scatter(abcf_df.loc['a'], abcf_df.loc[f])
+            a_ax = fig.add_subplot(2,2,1)
+            a_ax.scatter(abcf_df.loc[f],abcf_df.loc['a'])
             a_ax.set_title('a')
-            b_ax = fig.add_subplot(1,1,1)
-            b_ax.scatter(abcf_df.loc['b'], abcf_df.loc[f])
+            b_ax = fig.add_subplot(2,2,2)
+            b_ax.scatter(abcf_df.loc[f],abcf_df.loc['b'])
             b_ax.set_title('b')
-            c_ax = fig.add_subplot(1,1,1)
-            c_ax.scatter(abcf_df.loc['c'], abcf_df.loc[f])
+            c_ax = fig.add_subplot(2,2,3)
+            c_ax.scatter(abcf_df.loc[f],abcf_df.loc['c'])
             c_ax.set_title('c')
 
             figs.append(fig)
@@ -1654,6 +1738,15 @@ class figure_combiner_f(possibly_cached):
             figs.append(self.base_fig_creator(*how)(*which))
         return figs
 
+
+class always_true_f(keyed_object):
+
+    def get_introspection_key(self):
+        return 'truef'
+
+    def __call__(self, *args, **kwargs):
+        return True
+
 """
 helpers
 """
@@ -1719,6 +1812,8 @@ def logistic(x):
 def scaled_logistic_loss(x, c):
 
     return 2*(logistic(c*x)-0.5)
+
+
 
 def train_logistic_model(X, Y):
     """
@@ -1802,7 +1897,11 @@ class pp_roll(object):
         self.cur_fig_num = self.cur_fig_num + 1
         return ax
 
-            
+def print_traceback():
+    import traceback, sys
+    for frame in traceback.extract_tb(sys.exc_info()[2]):
+        fname,lineno,fn,text = frame
+        print "Error in %s on line %d" % (fname, lineno)            
 
 class my_iter_apply(object):
 
@@ -1818,7 +1917,7 @@ def get_feature_set_iterator(*args):
     given list of iterators, each of which iterate over keyed_lists of features, gives iterator over flattened cross_product of those iterators, with the key of returned feature list set to the concatenation of individual keys.  adds offset_feature to feature set
     """
     def f(inner_args):
-        return set_hard_coded_key_dec(keyed_list, '_'.join(itertools.imap(lambda x:x.get_key(), inner_args)))(itertools.chain(itertools.chain(*inner_args),[ones_f()]))
+        return set_hard_coded_key_dec(keyed_list, '_'.join(itertools.imap(lambda x:x.get_key(), inner_args)))(itertools.chain(*inner_args))
     return itertools.imap(f, itertools.product(*args))
 
 def get_gapped_iterable(the_iter, k, n):

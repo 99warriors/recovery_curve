@@ -12,7 +12,7 @@ import traceback
 
 def plot_model_performances(the_iterable):
 
-    for pid_iterator, filtered_data_f, diffcovs_iter, diffcovs_numchains, diffcovs_seed, perf_percentiles, perf_times, get_pops_f, summarize_f, cv_f, ys_f, hypers, x_abc_f, loss_f, actual_ys_f_shift in the_iterable:
+    for pid_iterator, filter_f, diffcovs_iter, diffcovs_numchains, diffcovs_seed, perf_percentiles, perf_times, get_pops_f, summarize_f, cv_f, ys_f, hypers, x_abc_f, loss_f, actual_ys_f_shift, post_process_f in the_iterable:
 
         try:
             get_posterior_f = ps.get_pystan_diffcovs_posterior_f(get_pops_f, hypers, diffcovs_iter, diffcovs_numchains, diffcovs_seed)
@@ -24,8 +24,8 @@ def plot_model_performances(the_iterable):
             init_f = ps.set_hard_coded_key_dec(ps.s_f, 'init')(ys_f)
             actual_ys_f = ps.actual_ys_f(ys_f, actual_ys_f_shift)
             data = ps.get_data_f(x_abc_f, init_f, actual_ys_f)(pid_iterator)
-            filtered_data = filtered_data_f(data)
-
+            filtered_data = ps.generic_filtered_get_data_f(filter_f)(data)
+            filtered_data = post_process_f(filtered_data)
             ps.model_comparer_f(trainers, cv_f, loss_f, perf_percentiles, shifted_perf_times)(filtered_data)
         except Exception, e:
             for frame in traceback.extract_tb(sys.exc_info()[2]):

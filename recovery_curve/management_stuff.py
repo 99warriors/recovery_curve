@@ -75,6 +75,8 @@ def compose_expanded_args(f,g):
     def composed(*args):
         return f(*(g(*args)))
 
+    return composed
+
 class method_decorator(object):
 
     def __init__(self, f):
@@ -184,6 +186,9 @@ def add_braces(f):
         return '(%s)' % f(*args, **kwargs)
     return deced
 
+class my_Exception(Exception):
+    pass
+
 class raise_if_na(object):
     """
     class method decorator that raises exception if return value isnan
@@ -194,7 +199,7 @@ class raise_if_na(object):
     def __call__(self, inst, *args, **kwargs):
         ans = self.f(inst, *args, **kwargs)
         if np.isnan(ans):
-            raise Exception
+            raise my_Exception
         return ans
 
     def __get__(self, inst, cls):
@@ -304,17 +309,33 @@ class composed_getter(object):
 
 class composed_factory(possibly_cached):
 
-    def __init__(self, f, g):
-        self.f, self.g = f,g
+    def __init__(self, f, g, expand=False):
+        if expand:
+            self.h = compose_expanded_args(f,g)
+        else:
+            self.h = compose(f,g)
+        self.f, self.g = f, g
 
-    def __call__(self, *args, **kwargs):
-        return self.f(self.g(*args, **kwargs))
+    def __call__(self, *args):
+        return self.h(*args)
 
     def get_introspection_key(self):
-        return '%s_%s' % (self.f.get_key(), self.g.get_key())
+        try:
+            return '%s_%s' % (self.f.get_key(), self.g.get_key())
+        except AttributeError:
+            try:
+                return self.f.get_key()
+            except AttributeError:
+                try:
+                    return self.g.get_key()
+                except AttributeError:
+                    return ''
 
     def key_f(self, *args, **kwargs):
-        return '%s_%s' % (self.get_key(), self.g.key_f(*args, **kwargs))
+        try:
+            return '%s_%s' % (self.get_key(), self.g.key_f(*args, **kwargs))
+        except AttributeError:
+            raise my_Exception
 
     print_handler_f = composed_getter('print_handler_f')
 
