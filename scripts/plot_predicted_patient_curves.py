@@ -9,7 +9,7 @@ from recovery_curve.management_stuff import *
 
 def plot_predicted_patient_curves(the_iterable):
 
-    for pid_iterator, filtered_data_f, diffcovs_iter, diffcovs_numchains, diffcovs_seed, perf_percentiles, perf_times, get_pops_f, summarize_f, cv_f, ys_f, hypers, x_abc_f, loss_f, actual_ys_f_shift, post_process_f in the_iterable:
+    for pid_iterator, filter_f, diffcovs_iter, diffcovs_numchains, diffcovs_seed, perf_percentiles, perf_times, get_pops_f, summarize_f, cv_f, ys_f, hypers, x_abc_f, loss_f, actual_ys_f_shift, post_process_f in the_iterable:
 
         try:
             get_posterior_f = ps.get_pystan_diffcovs_posterior_f(get_pops_f, hypers, diffcovs_iter, diffcovs_numchains, diffcovs_seed)
@@ -25,6 +25,7 @@ def plot_predicted_patient_curves(the_iterable):
 
             ps.plot_all_predictions_fig_f(ps.keyed_list([prior_trainer, logreg_trainer, diffcovs_trainer]), cv_f, shifted_perf_times)(filtered_data)
         except:
+            ps.print_traceback()
             pass
 
 if __name__ == '__main__':

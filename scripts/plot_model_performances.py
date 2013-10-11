@@ -17,15 +17,19 @@ def plot_model_performances(the_iterable):
         try:
             get_posterior_f = ps.get_pystan_diffcovs_posterior_f(get_pops_f, hypers, diffcovs_iter, diffcovs_numchains, diffcovs_seed)
             diffcovs_trainer = ps.get_diffcovs_point_predictor_f(get_posterior_f, summarize_f)
+            nonpoint_trainer = ps.get_diffcovs_nonpoints_predictor_f(get_posterior_f, ps.mean_f(), get_pops_f)
             prior_trainer = ps.get_prior_predictor_f(get_pops_f)
             shifted_perf_times = [t - actual_ys_f_shift for t in perf_times]
             logreg_trainer = ps.get_logreg_predictor_f(shifted_perf_times)
-            trainers = ps.keyed_list([prior_trainer, logreg_trainer, diffcovs_trainer])
+            #trainers = ps.keyed_list([nonpoint_trainer, diffcovs_trainer, prior_trainer, logreg_trainer])
+            trainers = ps.keyed_list([nonpoint_trainer, diffcovs_trainer])
+            #trainers = ps.keyed_list([diffcovs_trainer, prior_trainer, logreg_trainer])
             init_f = ps.set_hard_coded_key_dec(ps.s_f, 'init')(ys_f)
             actual_ys_f = ps.actual_ys_f(ys_f, actual_ys_f_shift)
             data = ps.get_data_f(x_abc_f, init_f, actual_ys_f)(pid_iterator)
             filtered_data = ps.generic_filtered_get_data_f(filter_f)(data)
             filtered_data = post_process_f(filtered_data)
+
             ps.model_comparer_f(trainers, cv_f, loss_f, perf_percentiles, shifted_perf_times)(filtered_data)
         except Exception, e:
             for frame in traceback.extract_tb(sys.exc_info()[2]):

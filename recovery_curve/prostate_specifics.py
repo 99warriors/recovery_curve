@@ -671,6 +671,60 @@ class get_pystan_diffcovs_posterior_f(possibly_cached_folder):
         return posteriors
 
 
+class print_diffcovs_posterior_means(possibly_cached):
+    """
+    for each coefficient, make a plot.  x-axis is for different features, different line
+    this should probably take in a list of posteriors rather than data
+    """
+
+    def get_introspection_key(self):
+        return '%s_%s_%s' % ('meanplt', self.cv_f.get_key(), self.get_posterior_f.get_key())
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s' % (global_stuff.data_home, 'posterior_means')
+
+    print_handler_f = staticmethod(multiple_figures_to_pdf)
+
+    def __init__(self, cv_f, get_posterior_f):
+        self.cv_f, self.get_posterior_f = cv_f, get_posterior_f
+
+    print_handler_f = staticmethod(multiple_figures_to_pdf)
+
+
+    @save_to_file
+    def __call__(self, data):
+        posteriors = []
+        for train_data, test_data in self.cv_f(data):
+            posteriors.append(self.get_posterior_f(train_data))
+
+        param_names = ['B_a', 'B_b', 'B_c']
+        figs = []
+
+        for param_name in param_names:
+
+            fig = plt.figure()
+            fig.suptitle(data.get_key(),fontsize=8)
+            fig.subplots_adjust(bottom=0.4)
+            ax = fig.add_subplot(1,1,1)
+            ax.set_title(param_name)
+            fold_posteriors = [posterior[param_name] for posterior in posteriors]
+            for fold_posterior in fold_posteriors:
+                fold_posterior_mean = fold_posterior.mean()
+                num_feat = len(fold_posterior_mean)
+                ax.set_xlim(-1,num_feat)
+                ax.set_ylim(-5,5)
+                ax.plot(range(num_feat), fold_posterior_mean, linestyle='None', marker='o')
+                ax.set_xticks(range(num_feat))
+                ax.set_xticklabels(fold_posterior_mean.index, rotation='vertical')
+                xticks = ax.get_xticklabels()
+                for xtick,i in zip(xticks,range(len(xticks))):
+                    xtick.set_fontsize(10)
+            figs.append(fig)
+
+        return figs
 
 class plot_diffcovs_posterior_f(possibly_cached):
     """
@@ -780,9 +834,9 @@ class full_model_point_predictor(keyed_object):
         self.params, self.pops = params, pops
 
     def __call__(self, datum, time):
-        a = g_a(self.pops.pop_a, self.params['B_a'], datum.xa)
-        b = g_a(self.pops.pop_b, self.params['B_b'], datum.xb)
-        c = g_a(self.pops.pop_c, self.params['B_c'], datum.xc)
+        a = g_a(self.pops.pop_a, datum.xa, self.params['B_a'])
+        b = g_b(self.pops.pop_b, datum.xb, self.params['B_b'],)
+        c = g_c(self.pops.pop_c, datum.xc, self.params['B_c'],)
         return the_f(time, datum.s, a, b, c)
 
 
@@ -826,6 +880,70 @@ class get_diffcovs_point_predictor_f(possibly_cached):
         # assuming that get_diffcovs_posterior_f has a get_pops_f attribute i can call
         pops = self.get_diffcovs_posterior_f.get_pops_f(data)
         return full_model_point_predictor(params, pops)
+
+
+class mean_f(keyed_object):
+
+    def get_introspection_key(self):
+        return 'meanf'
+
+    def __call__(self, l):
+        total = 0.0
+        count = 0.0
+        for x in l:
+            total += x
+            count += 1
+        return total/count
+
+class nonpoint_predictor_f(keyed_object):
+
+    display_color = 'green'
+
+    display_name = 'corr'
+
+    def get_introspection_key(self):
+        return self.point_f.get_key()
+        return '%s_%s_%s' % (self.posteriors.get_key(), self.point_f.get_key(), self.pops.get_key())
+        return '%s_%s_%s' % (self.posteriors.get_key(), self.point_f.get_key())
+
+    def __init__(self, posteriors, point_f, pops):
+        self.posteriors, self.point_f, self.pops = posteriors, point_f, pops
+    
+    def __call__(self, datum, time):
+        if time == 1:
+            import sys
+            sys.stdout.flush()
+            print datum.pid
+        f = functools.partial(the_f, time, datum.s)
+        return self.point_f(itertools.imap(f, itertools.imap(functools.partial(g_a, self.pops.pop_a, datum.xa), itertools.imap(lambda x:x[1], self.posteriors['B_a'].iterrows())), itertools.imap(functools.partial(g_b, self.pops.pop_b, datum.xb), itertools.imap(lambda x:x[1], self.posteriors['B_b'].iterrows())), itertools.imap(functools.partial(g_c, self.pops.pop_c, datum.xc), itertools.imap(lambda x:x[1], self.posteriors['B_c'].iterrows()))))
+
+class get_diffcovs_nonpoints_predictor_f(possibly_cached):
+    """
+    return trained object that makes point predictions
+    """
+    display_color = full_model_point_predictor.display_color
+
+    display_name = full_model_point_predictor.display_name
+
+    def get_introspection_key(self):
+        return '%s_%s_%s_%s' % ('fullpred_f', self.get_diffcovs_posterior_f.get_key(), self.point_f.get_key(), self.get_pops_f.get_key())
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def __init__(self, get_diffcovs_posterior_f, point_f, get_pops_f):
+        self.get_diffcovs_posterior_f, self.point_f, self.get_pops_f = get_diffcovs_posterior_f, point_f, get_pops_f
+
+    @key
+    def __call__(self, data):
+        posteriors = self.get_diffcovs_posterior_f(data)
+        
+        # assuming that get_diffcovs_posterior_f has a get_pops_f attribute i can call
+        pops = self.get_diffcovs_posterior_f.get_pops_f(data)
+        return nonpoint_predictor_f(posteriors, self.point_f, pops)
+
+
+
 
 class logreg_predictor(keyed_object):
     """
@@ -1005,18 +1123,17 @@ class performance_series_f(possibly_cached):
     returns a dataframe.  mean score will be the first column
     """
 
-    def __init__(self, scores_getter_f, loss_f, percentiles):
-        self.scores_getter_f, self.loss_f, self.percentiles = scores_getter_f, loss_f, percentiles
+    def __init__(self, loss_f, percentiles, data, times):
+        self.loss_f, self.percentiles, self.data, self.times = loss_f, percentiles, data, times
 
     @key
     @save_and_memoize
-    def __call__(self, data):
+    def __call__(self, scores):
         # have raw scores for each patient
-        scores = self.scores_getter_f(data)
-        true_ys = pandas.DataFrame({datum.pid:datum.ys for datum in data})
+        true_ys = pandas.DataFrame({datum.pid:datum.ys for datum in self.data if datum.pid in scores.columns})
         diff = (scores - true_ys).abs()
         losses = diff.apply(self.loss_f, axis=1)
-        losses = losses.ix[:,self.scores_getter_f.times]
+        losses = losses.ix[self.times]
         mean_losses = losses.apply(np.mean, axis=1)
         loss_percentiles = losses.apply(functools.partial(get_percentiles, percentiles=self.percentiles), axis=1)
         loss_percentiles['mean'] = mean_losses
@@ -1024,13 +1141,13 @@ class performance_series_f(possibly_cached):
         
 
     def get_introspection_key(self):
-        return '%s_%s_%s' % ('perf', self.scores_getter_f.get_key(), self.loss_f.get_key())
+        return '%s_%s' % ('perf', self.loss_f.get_key())
 
     def key_f(self, data):
         return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        return '%s/%s' % (data.get_location(), self.scores_getter_f.get_key())
+        return '%s/%s' % (data.get_location(), 'performances')
 
     print_handler_f = staticmethod(write_DataFrame)
 
@@ -1051,14 +1168,64 @@ class model_comparer_f(possibly_cached):
         ax = fig.add_subplot(1,1,1)
         ax.set_title(self.loss_f.get_key())
         for trainer in self.trainers:
-            score_getter = cross_validated_scores_f(trainer, self.cv_f, self.times)
-            _performance_series_f = performance_series_f(score_getter, self.loss_f, self.percentiles)
-            perfs = _performance_series_f(data)
+            scores_getter = cross_validated_scores_f(trainer, self.cv_f, self.times)
+            scores = scores_getter(data)
+            _performance_series_f = performance_series_f(self.loss_f, self.percentiles, data, self.times)
+            perfs = _performance_series_f(scores)
             add_performances_to_ax(ax, perfs, trainer.display_color, trainer.display_name)
         ax.set_xlim(-1.0,50)
+        ax.set_ylim(-0.1,1.1)
         ax.legend()
         fig.show()
         return fig
+
+    def get_introspection_key(self):
+        return self.trainers[0].get_key()
+        return '%s_%s_%s_%s' % ('bs', self.trainers.get_key(), self.cv_f.get_key(), self.loss_f.get_key())
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s' % (global_stuff.data_home,'betweenmodel_perfs')
+
+    print_handler_f = staticmethod(figure_to_pdf)
+
+    read_f = staticmethod(not_implemented_f)
+
+class stratified_model_comparer_f(possibly_cached):
+    """
+    hard code the loss functions used
+    accepts a categorical feature to stratify
+    """
+
+    def __init__(self, trainers, cv_f, loss_f, percentiles, times, cat_f):
+        self.trainers, self.cv_f, self.loss_f, self.percentiles, self.times = trainers, cv_f, loss_f, percentiles, times
+
+    @save_to_file
+    @memoize
+    def __call__(self, data):
+        fig = plt.figure()
+        # have a dict from feature to ax.  create the axes using a pp_roll
+        roll = pp_roll(2,2)
+        f_to_ax = {}
+        for f in self.cat_f:
+            ax = roll.get_axes()
+            ax.set_title('%s %s' % (f.get_key(), self.loss_f.get_key()))
+            ax.set_xlim(-1.0,50)
+            f_to_ax[f] = ax
+        
+        for trainer in self.trainers:
+            scores_getter = cross_validated_scores_f(trainer, self.cv_f, self.times)
+            scores = scores_getter(data)
+            _performance_series_f = performance_series_f(self.loss_f, self.percentiles, data)
+            for f in self.cat_f:
+                ok_pids = [pid for pid in scores.columns if f(pid)]
+                this_scores = scores[ok_pids]
+                this_perfs = _performance_series_f(scores)
+                add_performances_to_ax(f_to_ax[f], this_perfs, trainer.display_color, trainer.display_name)
+
+        return roll.figs
 
     def get_introspection_key(self):
         return '%s_%s_%s_%s' % ('btwmodperf', self.trainers.get_key(), self.cv_f.get_key(), self.loss_f.get_key())
@@ -1764,14 +1931,15 @@ def add_series_to_ax(s, ax, color, label, linestyle):
 def the_f(t, s, a, b, c):
     return s * ( (1.0-a) - (1.0-a)*(b) * math.exp(-1.0*t/c))
 
-def g_a(pop_a, B_a, xa):
-    return logistic(pop_a + xa.dot(B_a))
+def g_a(pop_a, xa, B_a):
+    return logistic(logit(pop_a) + xa.dot(B_a))
                  
-def g_b(pop_b, B_b, xb):
-    return logistic(pop_b + xb.dot(B_b))
+def g_b(pop_b, xb, B_b):
+    return logistic(logit(pop_b) + xb.dot(B_b))
 
-def g_c(pop_c, B_c, xc):
-    return logistic(pop_c + xc.dot(B_c))
+def g_c(pop_c, xc, B_c):
+    import math
+    return math.exp(math.log(pop_c) + xc.dot(B_c))
 
 def get_curve_abc(s, curve):
     import math
@@ -1805,6 +1973,9 @@ def get_percentiles(l, percentiles):
     num = len(s_l)
     return pandas.Series([s_l[int((p*num)+1)-1] for p in percentiles],index=percentiles)
 
+def logit(x):
+    import math
+    return math.log(x/(1.0-x))
 
 def logistic(x):
     return 1.0 / (1 + np.exp(-x))

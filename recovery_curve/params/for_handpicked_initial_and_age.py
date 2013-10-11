@@ -9,6 +9,9 @@ import pdb
 """
 new version of iterator - returns ys_filter_f(s,ys) which can be used by generic_get_data
 returns post_process_f(data)
+
+right now, use 4fold cv when working with hand picked , 3 fold with old filtering
+
 """
 
 class the_iterable_cls(object):
@@ -16,18 +19,19 @@ class the_iterable_cls(object):
     def __iter__(self):
         
         pid_iterators1 = [ps.filtered_pid_iterator(set_hard_coded_key_dec(ps.filtered_pid_iterator,'surgpids')(ps.all_ucla_pid_iterator(), ps.bin_f(ps.ucla_treatment_f(),ps.equals_bin([ps.ucla_treatment_f.surgery]))), ps.is_good_pid())]
-        pid_iterators2 = [set_hard_coded_key_dec(ps.filtered_pid_iterator,'surgpids')(ps.all_ucla_pid_iterator(), ps.bin_f(ps.ucla_treatment_f(),ps.equals_bin([ps.ucla_treatment_f.surgery]))), ps.is_good_pid()]
+        pid_iterators2 = [set_hard_coded_key_dec(ps.filtered_pid_iterator,'surgpids')(ps.all_ucla_pid_iterator(), ps.bin_f(ps.ucla_treatment_f(),ps.equals_bin([ps.ucla_treatment_f.surgery])))]
         filter_fs1 = [ps.always_true_f()]
         filter_fs2 = [hard_coded_filter_fs.old_filter_f]
         upscale_vals = [0]
-        diffcovs_iters = [500]
-        diffcovs_numchains = [1]
+        diffcovs_iters = [5000]
+        diffcovs_numchains = [4]
         diffcovs_seeds = [1]
         perf_percentiles = [[0.25, 0.5, 0.75]]
         perf_times = [[1,2,4,8,12,18,24,30,36,42,48]]
         get_pops_fs = [ps.train_better_pops_f()]
         summarize_fs = [ps.get_param_mean_f()]
-        cv_fs = [ps.cv_fold_f(4)]
+        cv_fs1 = [ps.cv_fold_f(4)]
+        cv_fs2 = [ps.cv_fold_f(3)]
         upscale_vals = [0.0] #
         ys_fs = [ps.modified_ys_f(ps.ys_f(ps.ys_f.sexual_function), ps.score_modifier_f(c)) for c in upscale_vals]
 
@@ -45,6 +49,11 @@ class the_iterable_cls(object):
         hypers = [hard_coded_hypers.default_hyper]
 
         x_abc_fs = ps.keyed_list([set_hard_coded_key_dec(ps.x_abc_fs, feature_set.get_key())(feature_set, feature_set, feature_set) for feature_set in feature_sets_iterator])
+
+        return itertools.chain(\
+            itertools.product(pid_iterators1, filter_fs1, diffcovs_iters, diffcovs_numchains, diffcovs_seeds, perf_percentiles, perf_times, get_pops_fs, summarize_fs, cv_fs1, ys_fs, hypers, x_abc_fs, loss_fs, actual_ys_f_shifts, post_process_fs),\
+            itertools.product(pid_iterators2, filter_fs2, diffcovs_iters, diffcovs_numchains, diffcovs_seeds, perf_percentiles, perf_times, get_pops_fs, summarize_fs, cv_fs2, ys_fs, hypers, x_abc_fs, loss_fs, actual_ys_f_shifts, post_process_fs)\
+                )
 
         return itertools.chain(\
             itertools.product(pid_iterators1, filter_fs1, diffcovs_iters, diffcovs_numchains, diffcovs_seeds, perf_percentiles, perf_times, get_pops_fs, summarize_fs, cv_fs, ys_fs, hypers, x_abc_fs, loss_fs, actual_ys_f_shifts, post_process_fs), \
