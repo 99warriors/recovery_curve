@@ -361,7 +361,52 @@ class bin_f(feat):
 predictor factories(Aka trainers) and predictor class definitions
 """
 
+class point_predictor(object):
 
+    def plot_prediction(self, ax, prediction, color=None, name=None):
+        if color == None:
+            color=self.display_color
+        if name == None:
+            name=self.display_name
+        add_series_to_ax(prediction, ax, color, name, linestyle='-')
+
+    def get_prediction_series(self, datum, ts):
+        d = {}
+        for t in ts:
+            d[t] = self.__call__(datum, t)
+        return pandas.Series(d)
+
+class nonpoint_predictor_base(object):
+    """
+    __call__ will return the entire unsorted distribution of f(t)
+    """
+    def get_prediction_series(self, datum, ts):
+        d = {}
+        for t in ts:
+            d[t] = self.__call__(datum, t)
+        return pandas.DataFrame(d)
+
+    def plot_prediction(self, ax, prediction, percentiles=[.25,.50,.75], color=None, name=None):
+        if color == None:
+            color=self.display_color
+        if name == None:
+            name=self.display_name
+        d = {}
+        for t, samples in prediction.iteritems():
+            cp = samples.copy()
+            cp.sort()
+            s_d = {}
+            s_d['mean'] = cp.mean()
+            num = len(cp)
+            for percentile in percentiles:
+                s_d[percentile] = cp[percentile * num]
+            d[t] = pandas.Series(s_d)
+        d = pandas.DataFrame(d)
+        for l, s in d.iterrows():
+            if l == 'mean':
+                ax.plot(s.index, s, linestyle='--', marker='x', label=name, color=color)
+            else:
+                ax.plot(s.index, s, linestyle='None', marker='_', color=color)
 
 class pops(keyed_object):
 
@@ -459,7 +504,7 @@ class train_better_pops_f(possibly_cached):
         return pops(x[0],x[1],x[2])
 
 
-class prior_predictor(keyed_object):
+class prior_predictor(keyed_object, point_predictor):
 
     display_color = 'blue'
 
@@ -614,7 +659,7 @@ class get_pystan_diffcovs_posterior_f(possibly_cached_folder):
     #@save_and_memoize
     @key
     @read_from_pickle
-    @save_to_file
+    #@save_to_file
     @save_to_pickle
     def __call__(self, data):
         """
@@ -668,6 +713,7 @@ class get_pystan_diffcovs_posterior_f(possibly_cached_folder):
         traces = fit.extract(permuted=True)
         
         # need to convert arrays to dataframes, and give them the same indicies as in data
+        
         posteriors = keyed_dict({})
         posteriors['B_a'] = pandas.DataFrame(traces['B_a'])
         posteriors['B_a'].columns = _a_datum.xa.index
@@ -683,6 +729,19 @@ class get_pystan_diffcovs_posterior_f(possibly_cached_folder):
         posteriors['phi_c'].columns = ['phi_c']
         posteriors['phi_m'] = pandas.DataFrame(traces['phi_m'])
         posteriors['phi_m'].columns = ['phi_m']
+
+        # also extract the A_i,B_i,C_i parameters
+        pids = [_datum.pid for _datum in data]
+        pid_to_i = {pid:i for pid,i in zip(pids,xrange(N))}
+        N = len(data)
+        d_A, d_B, d_C = {}. {}. {}
+        for i in xrange(N):
+            d_A[pid_to_i] = traces[A][i]
+            d_B[pid_to_i] = traces[B][i]
+            d_C[pid_to_i] = traces[C][i]
+        posteriors['As'] = pandas.DataFrame(d_A)
+        posteriors['Bs'] = pandas.DataFrame(d_B)
+        posteriors['Cs'] = pandas.DataFrame(d_C)
 
         return posteriors
 
@@ -1157,7 +1216,7 @@ class plot_single_posterior_f(possibly_cached):
 
         return roll.figs
 
-class full_model_point_predictor(keyed_object):
+class full_model_point_predictor(keyed_object, point_predictor):
     """
     given point estimates of posterior params, does prediction
     """
@@ -1234,27 +1293,34 @@ class mean_f(keyed_object):
             count += 1
         return total/count
 
-class nonpoint_predictor_f(keyed_object):
 
-    display_color = 'green'
+        
 
-    display_name = 'corr'
+class nonpoint_predictor_f(keyed_object, nonpoint_predictor_base):
+
+    display_color = 'orange'
+
+    display_name = 'f(t) post'
 
     def get_introspection_key(self):
+        return 'nonpoint'
         return self.point_f.get_key()
         return '%s_%s_%s' % (self.posteriors.get_key(), self.point_f.get_key(), self.pops.get_key())
         return '%s_%s_%s' % (self.posteriors.get_key(), self.point_f.get_key())
 
-    def __init__(self, posteriors, point_f, pops):
-        self.posteriors, self.point_f, self.pops = posteriors, point_f, pops
+    def __init__(self, posteriors, pops):
+        self.posteriors, self.pops = posteriors, pops
     
     def __call__(self, datum, time):
+        print datum.pid, time
         if time == 1:
             import sys
             sys.stdout.flush()
             print datum.pid
         f = functools.partial(the_f, time, datum.s)
-        return self.point_f(itertools.imap(f, itertools.imap(functools.partial(g_a, self.pops.pop_a, datum.xa), itertools.imap(lambda x:x[1], self.posteriors['B_a'].iterrows())), itertools.imap(functools.partial(g_b, self.pops.pop_b, datum.xb), itertools.imap(lambda x:x[1], self.posteriors['B_b'].iterrows())), itertools.imap(functools.partial(g_c, self.pops.pop_c, datum.xc), itertools.imap(lambda x:x[1], self.posteriors['B_c'].iterrows()))))
+        return pandas.Series(list(itertools.imap(f, itertools.imap(functools.partial(g_a, self.pops.pop_a, datum.xa), itertools.imap(lambda x:x[1], self.posteriors['B_a'].iterrows())), itertools.imap(functools.partial(g_b, self.pops.pop_b, datum.xb), itertools.imap(lambda x:x[1], self.posteriors['B_b'].iterrows())), itertools.imap(functools.partial(g_c, self.pops.pop_c, datum.xc), itertools.imap(lambda x:x[1], self.posteriors['B_c'].iterrows())))))
+
+        #return self.point_f(itertools.imap(f, itertools.imap(functools.partial(g_a, self.pops.pop_a, datum.xa), itertools.imap(lambda x:x[1], self.posteriors['B_a'].iterrows())), itertools.imap(functools.partial(g_b, self.pops.pop_b, datum.xb), itertools.imap(lambda x:x[1], self.posteriors['B_b'].iterrows())), itertools.imap(functools.partial(g_c, self.pops.pop_c, datum.xc), itertools.imap(lambda x:x[1], self.posteriors['B_c'].iterrows()))))
 
 class get_diffcovs_nonpoints_predictor_f(possibly_cached):
     """
@@ -1265,13 +1331,13 @@ class get_diffcovs_nonpoints_predictor_f(possibly_cached):
     display_name = full_model_point_predictor.display_name
 
     def get_introspection_key(self):
-        return '%s_%s_%s_%s' % ('fullpred_f', self.get_diffcovs_posterior_f.get_key(), self.point_f.get_key(), self.get_pops_f.get_key())
+        return '%s_%s' % ('nonpt_f', self.get_diffcovs_posterior_f.get_key())
 
     def key_f(self, data):
         return '%s_%s' % (self.get_key(), data.get_key())
 
-    def __init__(self, get_diffcovs_posterior_f, point_f, get_pops_f):
-        self.get_diffcovs_posterior_f, self.point_f, self.get_pops_f = get_diffcovs_posterior_f, point_f, get_pops_f
+    def __init__(self, get_diffcovs_posterior_f):
+        self.get_diffcovs_posterior_f = get_diffcovs_posterior_f
 
     @key
     def __call__(self, data):
@@ -1279,12 +1345,12 @@ class get_diffcovs_nonpoints_predictor_f(possibly_cached):
         
         # assuming that get_diffcovs_posterior_f has a get_pops_f attribute i can call
         pops = self.get_diffcovs_posterior_f.get_pops_f(data)
-        return nonpoint_predictor_f(posteriors, self.point_f, pops)
+        return nonpoint_predictor_f(posteriors, pops)
 
 
 
 
-class logreg_predictor(keyed_object):
+class logreg_predictor(keyed_object, point_predictor):
     """
     
     """
@@ -1342,7 +1408,7 @@ class get_logreg_predictor_f(possibly_cached):
         return logreg_predictor(pandas.DataFrame(Bs))
 
 
-class logregshape_predictor(keyed_object):
+class logregshape_predictor(keyed_object, point_predictor):
     """
     
     """
@@ -1402,7 +1468,7 @@ class get_logregshape_predictor_f(possibly_cached):
         return logreg_predictor(pandas.DataFrame(Bs))
 
 
-class logregshapeunif_predictor(keyed_object):
+class logregshapeunif_predictor(keyed_object, point_predictor):
     """
     
     """
@@ -1533,15 +1599,10 @@ class plot_predictions_fig_f(possibly_cached):
         fig = plt.figure()
         ax = fig.add_subplot(1,1,1)
         ys = datum.ys
+        ts = datum.ys.index
         for predictor in self.predictors:
-            pred_d = {}
-            for t,v in ys.iteritems():
-                try:
-                    pred_d[t] = predictor(datum,t)
-                except:
-                    pass
-            prediction = pandas.Series(pred_d)
-            add_series_to_ax(prediction, ax, predictor.display_color, predictor.display_name, 'solid')
+            prediction_series = predictor.get_prediction_series(datum, ts)
+            predictor.plot_prediction(ax, prediction_series)
         add_series_to_ax(ys, ax, 'black', 'true', 'solid')
         try:
             abc_ys = pandas.Series({time:the_f(time,datum.s,datum.true_a,datum.true_b,datum.true_c) for time in np.linspace(0,50,200)})
@@ -1577,10 +1638,11 @@ class plot_all_predictions_fig_f(possibly_cached):
     def __call__(self, data):
         fig_structs = []
         figs = []
+
         for train_data, test_data in self.cv_f(data):
             predictors = keyed_list([get_predictor_f(train_data) for get_predictor_f in self.get_predictor_fs])
 
-            fig_structs += [[datum,plot_predictions_fig_f(predictors)(datum)] for datum in test_data]
+            fig_structs += [[datum,plot_predictions_fig_f(predictors)(datum)] for datum in test_data if datum.pid % 100 == 0]
 
             #figs += [plot_predictions_fig_f(predictors)(datum) for datum in test_data]
 

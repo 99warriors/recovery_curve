@@ -24,7 +24,8 @@ def plot_full_model_posterior_parameters(the_iterable):
             ps.plot_single_posterior_f(2,1)(posteriors)
 
             diffcovs_trainer = ps.get_diffcovs_point_predictor_f(get_posterior_f, ps.get_param_mean_f())
-            trainers = ps.keyed_list([diffcovs_trainer])
+            nonpoint_trainer = ps.get_diffcovs_nonpoints_predictor_f(get_posterior_f)
+            trainers = ps.keyed_list([diffcovs_trainer, nonpoint_trainer])
             perf_times = [1,2,4,8,12,18,24,30,36,42,48]
             percentiles = [0.25, 0.5, 0.75]
             cv_f = ps.self_test_cv_f()
