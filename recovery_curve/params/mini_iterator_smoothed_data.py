@@ -5,16 +5,21 @@ import recovery_curve.hard_coded_objects.feature_sets as hard_coded_feature_sets
 import recovery_curve.hard_coded_objects.filter_fs as hard_coded_filter_fs
 import itertools
 import pdb
+import functools
+
 
 """
-iterator used for comparing different models with fixed feature set
-10-1 - using to search for config where full_model beats logistic regression
+difference between this and mini_iterator_newfiltereddata:
+1. post processing includes smoothing the data
+2. get_posterior_f_constructor will be model where phi_m is fixed, and set to be really small
 """
 
 class the_iterable_cls(object):
 
     def __iter__(self):
-        get_posterior_f_constructors = [ps.get_pystan_diffcovs_truncated_posterior_f]
+        phi_m = 0.001
+        #get_posterior_f_constructors = [functools.partial(ps.get_pystan_diffcovs_truncated_posterior_f, 0.01)]
+        get_posterior_f_constructors = [functools.partial(ps.get_pystan_diffcovs_posterior_phi_m_fixed_f, 0.01)]
         pid_iterators = [ps.filtered_pid_iterator(set_hard_coded_key_dec(ps.filtered_pid_iterator,'surgpids')(ps.all_ucla_pid_iterator(), ps.bin_f(ps.ucla_treatment_f(),ps.equals_bin([ps.ucla_treatment_f.surgery]))), ps.is_good_pid())]
         #pid_iterators = [set_hard_coded_key_dec(ps.filtered_pid_iterator,'surgpids')(ps.all_ucla_pid_iterator(), ps.bin_f(ps.ucla_treatment_f(),ps.equals_bin([ps.ucla_treatment_f.surgery])))]
         #pid_iterators = [ps.all_ucla_pid_iterator()]
@@ -35,7 +40,7 @@ class the_iterable_cls(object):
 
         ys_fs = [ps.modified_ys_f(ps.ys_f(ps.ys_f.sexual_function), ps.score_modifier_f(c)) for c in upscale_vals]
 
-        post_process_fs = [ps.normalized_data_f()]
+        post_process_fs = [composed_factory(ps.normalized_data_f(), ps.smooth_data_f())]
 
         actual_ys_f_shifts = [0]
 

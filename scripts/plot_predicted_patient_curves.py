@@ -9,10 +9,10 @@ from recovery_curve.management_stuff import *
 
 def plot_predicted_patient_curves(the_iterable):
 
-    for pid_iterator, filter_f, diffcovs_iter, diffcovs_numchains, diffcovs_seed, perf_percentiles, perf_times, get_pops_f, summarize_f, cv_f, ys_f, hypers, x_abc_f, loss_f, actual_ys_f_shift, post_process_f in the_iterable:
+    for get_posterior_f_constructor, pid_iterator, filter_f, diffcovs_iter, diffcovs_numchains, diffcovs_seed, perf_percentiles, perf_times, get_pops_f, summarize_f, cv_f, ys_f, hypers, x_abc_f, loss_f, actual_ys_f_shift, post_process_f in the_iterable:
 
         try:
-            get_posterior_f = ps.get_pystan_diffcovs_posterior_f(get_pops_f, hypers, diffcovs_iter, diffcovs_numchains, diffcovs_seed)
+            get_posterior_f = get_posterior_f_constructor(get_pops_f, hypers, diffcovs_iter, diffcovs_numchains, diffcovs_seed)
             diffcovs_trainer = ps.get_diffcovs_point_predictor_f(get_posterior_f, summarize_f)
             prior_trainer = ps.get_prior_predictor_f(get_pops_f)
             shifted_perf_times = [t - actual_ys_f_shift for t in perf_times]

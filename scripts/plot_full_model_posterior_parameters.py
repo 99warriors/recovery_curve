@@ -9,10 +9,10 @@ from recovery_curve.management_stuff import *
 
 def plot_full_model_posterior_parameters(the_iterable):
     
-    for pid_iterator, filter_f, diffcovs_iter, diffcovs_numchains, diffcovs_seed, perf_percentiles, perf_times, get_pops_f, summarize_f, cv_f, ys_f, hypers, x_abc_f, loss_f, actual_ys_f_shift, post_process_f in the_iterable:
+    for get_posterior_f_constructor, pid_iterator, filter_f, diffcovs_iter, diffcovs_numchains, diffcovs_seed, perf_percentiles, perf_times, get_pops_f, summarize_f, cv_f, ys_f, hypers, x_abc_f, loss_f, actual_ys_f_shift, post_process_f in the_iterable:
 
         try:
-            get_posterior_f = ps.get_pystan_diffcovs_posterior_f(get_pops_f, hypers, diffcovs_iter, diffcovs_numchains, diffcovs_seed)
+            get_posterior_f = get_posterior_f_constructor(get_pops_f, hypers, diffcovs_iter, diffcovs_numchains, diffcovs_seed)
             init_f = ps.set_hard_coded_key_dec(ps.s_f, 'init')(ys_f)
             actual_ys_f = ps.actual_ys_f(ys_f, actual_ys_f_shift)
 
@@ -22,6 +22,7 @@ def plot_full_model_posterior_parameters(the_iterable):
 
             #ps.plot_diffcovs_posterior_f(3, 2, cv_f, get_posterior_f)(filtered_data)
             ps.print_diffcovs_posterior_means(cv_f, get_posterior_f)(filtered_data)
+            ps.print_diffcovs_posterior_means_effect(cv_f, get_posterior_f)(filtered_data)
         except Exception, e:
             import traceback
             for frame in traceback.extract_tb(sys.exc_info()[2]):
