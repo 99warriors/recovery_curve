@@ -1317,6 +1317,10 @@ class nonpoint_predictor_f(keyed_object, nonpoint_predictor_base):
             import sys
             sys.stdout.flush()
             print datum.pid
+        if datum.pid in posteriors['As'].columns:
+            f = functools.partial(the_f, time, datum.s)
+            return pandas.Series(list(itertools.imap(f, posteriors['As'][datum.pid], posteriors['Bs'][datum.pid], posteriors['Cs'][datum.pid])))
+        assert False
         f = functools.partial(the_f, time, datum.s)
         return pandas.Series(list(itertools.imap(f, itertools.imap(functools.partial(g_a, self.pops.pop_a, datum.xa), itertools.imap(lambda x:x[1], self.posteriors['B_a'].iterrows())), itertools.imap(functools.partial(g_b, self.pops.pop_b, datum.xb), itertools.imap(lambda x:x[1], self.posteriors['B_b'].iterrows())), itertools.imap(functools.partial(g_c, self.pops.pop_c, datum.xc), itertools.imap(lambda x:x[1], self.posteriors['B_c'].iterrows())))))
 
