@@ -23,10 +23,18 @@ class the_iterable_cls(object):
         #get_posterior_f_constructors = [ps.get_pystan_diffcovs_truncated_posterior_f, ps.get_pystan_diffcovs_posterior_f]
         get_posterior_f_constructors = [ps.get_pystan_diffcovs_posterior_f]
 
-
+        
         num_pids = [1000]
         diffcovs_iters = [10000]
         diffcovs_numchains = [10]
+        
+        
+        """
+        num_pids = [200]
+        diffcovs_iters = [10000]
+        diffcovs_numchains = [1]
+        """
+
         seeds = [1]
 
         

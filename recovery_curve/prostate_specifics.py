@@ -363,7 +363,7 @@ predictor factories(Aka trainers) and predictor class definitions
 
 class point_predictor(object):
 
-    def plot_prediction(self, ax, prediction, color=None, name=None):
+    def plot_prediction_series(self, ax, prediction, color=None, name=None):
         if color == None:
             color=self.display_color
         if name == None:
@@ -380,13 +380,42 @@ class nonpoint_predictor_base(object):
     """
     __call__ will return the entire unsorted distribution of f(t)
     """
-    def get_prediction_series(self, datum, ts):
+
+    def get_wide_prediction(self, datum, time):
+        f = functools.partial(the_f, time, datum.s)
+        return pandas.Series(list(itertools.imap(f, self.posteriors['As'][datum.pid], self.posteriors['Bs'][datum.pid], self.posteriors['Cs'][datum.pid])))
+
+
+    def get_wide_prediction_series(self, datum, ts):
         d = {}
         for t in ts:
-            d[t] = self.__call__(datum, t)
-        return pandas.DataFrame(d)
+            d[t] = self.get_wide_prediction(datum, t)
+        return pandas.DataFrame(d)        
 
-    def plot_prediction(self, ax, prediction, percentiles=[.25,.50,.75], color=None, name=None):
+    def plot_wide_prediction_series(self, ax, prediction, percentiles = [.25,.50,.75],color=None):
+        if color == None:
+            color=self.display_color
+        K = 300
+        import random
+        for t, samples in prediction.iteritems():
+            N = len(samples)
+            ys = [x for x in samples]
+            #ys = [x for x in samples if random.random() < float(K)/N]
+            xs = [random.uniform(float(t)-0.2, float(t)+0.2) for i in xrange(len(ys))]
+            ax.plot(xs, ys, linestyle='None', marker=',', color=color, alpha=0.3)
+
+    def get_narrow_prediction(self, datum, ts):
+        f = functools.partial(the_f, time, datum.s)
+        return pandas.Series(list(itertools.imap(f, itertools.imap(functools.partial(g_a, self.pops.pop_a, datum.xa), itertools.imap(lambda x:x[1], self.posteriors['B_a'].iterrows())), itertools.imap(functools.partial(g_b, self.pops.pop_b, datum.xb), itertools.imap(lambda x:x[1], self.posteriors['B_b'].iterrows())), itertools.imap(functools.partial(g_c, self.pops.pop_c, datum.xc), itertools.imap(lambda x:x[1], self.posteriors['B_c'].iterrows())))))
+
+    def get_narrow_prediction_series(self, datum, ts):
+        d = {}
+        for t in ts:
+            d[t] = self.get_narrow_prediction(datum, t)
+        return pandas.DataFrame(d)
+            
+
+    def plot_narrow_prediction_series(self, ax, prediction, percentiles=[.25,.50,.75], color=None, name=None):
         if color == None:
             color=self.display_color
         if name == None:
@@ -731,14 +760,17 @@ class get_pystan_diffcovs_posterior_f(possibly_cached_folder):
         posteriors['phi_m'].columns = ['phi_m']
 
         # also extract the A_i,B_i,C_i parameters
+        N = len(data)
         pids = [_datum.pid for _datum in data]
         pid_to_i = {pid:i for pid,i in zip(pids,xrange(N))}
-        N = len(data)
-        d_A, d_B, d_C = {}. {}. {}
+        d_A, d_B, d_C = {}, {}, {}
+        K = 150
+        num_samples = len(traces['B_a'])
+        to_keep = [z*int(num_samples/K) for z in range(K)]
         for i in xrange(N):
-            d_A[pid_to_i] = traces[A][i]
-            d_B[pid_to_i] = traces[B][i]
-            d_C[pid_to_i] = traces[C][i]
+            d_A[pid_to_i[i]] = pandas.Series(fit.extract()['as'][to_keep,i])
+            d_B[pid_to_i[i]] = pandas.Series(fit.extract()['bs'][to_keep,i])
+            d_C[pid_to_i[i]] = pandas.Series(fit.extract()['cs'][to_keep,i])
         posteriors['As'] = pandas.DataFrame(d_A)
         posteriors['Bs'] = pandas.DataFrame(d_B)
         posteriors['Cs'] = pandas.DataFrame(d_C)
@@ -1311,20 +1343,27 @@ class nonpoint_predictor_f(keyed_object, nonpoint_predictor_base):
     def __init__(self, posteriors, pops):
         self.posteriors, self.pops = posteriors, pops
     
+    def get_prediction_series(self, datum, ts):
+        return self.get_wide_prediction_series(datum, ts)
+
+    def plot_prediction_series(self, ax, prediction_series):
+        return self.plot_wide_prediction_series(ax,prediction_series)
+
+
     def __call__(self, datum, time):
+        pass
+        """
         print datum.pid, time
         if time == 1:
             import sys
             sys.stdout.flush()
             print datum.pid
-        if datum.pid in posteriors['As'].columns:
-            f = functools.partial(the_f, time, datum.s)
-            return pandas.Series(list(itertools.imap(f, posteriors['As'][datum.pid], posteriors['Bs'][datum.pid], posteriors['Cs'][datum.pid])))
-        assert False
+
         f = functools.partial(the_f, time, datum.s)
         return pandas.Series(list(itertools.imap(f, itertools.imap(functools.partial(g_a, self.pops.pop_a, datum.xa), itertools.imap(lambda x:x[1], self.posteriors['B_a'].iterrows())), itertools.imap(functools.partial(g_b, self.pops.pop_b, datum.xb), itertools.imap(lambda x:x[1], self.posteriors['B_b'].iterrows())), itertools.imap(functools.partial(g_c, self.pops.pop_c, datum.xc), itertools.imap(lambda x:x[1], self.posteriors['B_c'].iterrows())))))
 
         #return self.point_f(itertools.imap(f, itertools.imap(functools.partial(g_a, self.pops.pop_a, datum.xa), itertools.imap(lambda x:x[1], self.posteriors['B_a'].iterrows())), itertools.imap(functools.partial(g_b, self.pops.pop_b, datum.xb), itertools.imap(lambda x:x[1], self.posteriors['B_b'].iterrows())), itertools.imap(functools.partial(g_c, self.pops.pop_c, datum.xc), itertools.imap(lambda x:x[1], self.posteriors['B_c'].iterrows()))))
+        """
 
 class get_diffcovs_nonpoints_predictor_f(possibly_cached):
     """
@@ -1604,9 +1643,10 @@ class plot_predictions_fig_f(possibly_cached):
         ax = fig.add_subplot(1,1,1)
         ys = datum.ys
         ts = datum.ys.index
+        print datum.pid
         for predictor in self.predictors:
             prediction_series = predictor.get_prediction_series(datum, ts)
-            predictor.plot_prediction(ax, prediction_series)
+            predictor.plot_prediction_series(ax, prediction_series)
         add_series_to_ax(ys, ax, 'black', 'true', 'solid')
         try:
             abc_ys = pandas.Series({time:the_f(time,datum.s,datum.true_a,datum.true_b,datum.true_c) for time in np.linspace(0,50,200)})
@@ -1642,11 +1682,11 @@ class plot_all_predictions_fig_f(possibly_cached):
     def __call__(self, data):
         fig_structs = []
         figs = []
-
+        
         for train_data, test_data in self.cv_f(data):
             predictors = keyed_list([get_predictor_f(train_data) for get_predictor_f in self.get_predictor_fs])
 
-            fig_structs += [[datum,plot_predictions_fig_f(predictors)(datum)] for datum in test_data if datum.pid % 100 == 0]
+            fig_structs += [[datum,plot_predictions_fig_f(predictors)(datum)] for datum in test_data]
 
             #figs += [plot_predictions_fig_f(predictors)(datum) for datum in test_data]
 
@@ -3106,5 +3146,11 @@ class returns_whats_given_f(possibly_cached):
 
 
 
-#def plot_curve_distribution(ax, s, xa, xb, xc):
-    
+def merge_posteriors(p1, p2):
+    """
+    posteriors are just a dictionary.  merge samples using concat
+    """
+    p = {}
+    for param in p1:
+        p[param] = pandas.concat([p1[param],p2[param]])
+    return p
