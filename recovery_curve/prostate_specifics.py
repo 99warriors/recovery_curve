@@ -155,6 +155,7 @@ class keyed_iterable(keyed_object):
     def __iter__(self):
         return self.iterable.__iter__()
 
+
 """
 id_iterators
 """
@@ -380,6 +381,30 @@ class nonpoint_predictor_base(object):
     """
     __call__ will return the entire unsorted distribution of f(t)
     """
+
+    def plot_wide_curves(self, ax, datum, color=None):
+        if color == None:
+            color=self.display_color
+        K = 300
+        
+        ts = np.linspace(0, 50, 100)
+        for a, b, c in itertools.izip(self.posteriors['As'][datum.pid], self.posteriors['Bs'][datum.pid], self.posteriors['Cs'][datum.pid]):
+            N = self.posteriors['As'][datum.pid].shape[0]
+            if random.random() < float(K)/N:
+                ax.plot(ts, [the_f(t,datum.s,a,b,c) for t in ts], color=color, alpha=0.1)
+
+    def plot_narrow_curves(self, ax, datum, color=None):
+        if color == None:
+            #color=self.display_color
+            color = 'blue'
+        K = 300
+        
+        ts = np.linspace(0, 50, 100)
+
+        for B_a, B_b, B_c in itertools.izip(itertools.imap(lambda x:x[1],self.posteriors['B_a'].iterrows()), itertools.imap(lambda x:x[1],self.posteriors['B_b'].iterrows()), itertools.imap(lambda x:x[1],self.posteriors['B_c'].iterrows())):
+            N = self.posteriors['B_a'].shape[0]
+            if random.random() < float(K)/N:
+                ax.plot(ts, [the_f(t,datum.s,g_a(self.pops.pop_a, datum.xa, B_a), g_b(self.pops.pop_b, datum.xb, B_b), g_c(self.pops.pop_c, datum.xc, B_c)) for t in ts], color=color, alpha=0.1)
 
     def get_wide_prediction(self, datum, time):
         f = functools.partial(the_f, time, datum.s)
@@ -630,35 +655,49 @@ class get_diffcovs_posterior_f(possibly_cached_folder):
         return posteriors
 
 
-class combined_posterior_getter_f(possibly_cached):
-    """
-    takes a list of functions that get posteriors, calls them with data, and combines the posteriors
-    does keying using the last one in the list for now, just to save space
-    """
-    def key_f(self, data):
-        return '%s_%s_%s' % ('combined_posterior', self.posterior_f_list.get_key(), data.get_key())
 
-    def __init__(self, posterior_f_list):
-        self.posterior_f_list = posterior_f_list
-
-    def __call__(self, data):
-        def combine_posterior(p1, p2):
-            p = {}
-            for key in p1:
-                p[key] = concat([p1[key], p2[key]])
-            return p
-        posteriors = []
-        for posterior_f in self.posterior_f_list:
-            posteriors.append(posterior_f(data))
-        return reduce(combine_posterior, posteriors)
     
 
-class get_seed_seq_get_posterior_f_list_f(possibly_cached):
+class keyed_partial(functools.partial, keyed_object):
     """
-    takes in partial of 
-    """
-    pass
 
+    """
+    def get_introspection_key(self):
+        import string
+        return string.join([arg.get_key() for arg in self.args], sep='_')
+
+class merged_get_posterior_f(possibly_cached):
+
+    def get_introspection_key(self):
+        return '%s_%d_%d' % (self.get_posterior_f_cons_partial.get_key(), self.iters, self.chains)
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s' % (data.get_location(), 'merged_diffcovs')
+
+    print_handler_f = staticmethod(folder_adapter(write_posterior_traces))
+
+    read_f = staticmethod(read_posterior_traces)
+
+    def __init__(self, get_posterior_f_cons_partial, iters, chains):
+        self.get_posterior_f_cons_partial, self.iters, self.chains = get_posterior_f_cons_partial, iters, chains
+        self.get_pops_f = self.get_posterior_f_cons_partial.args[0]
+
+    @key
+    #@read_from_pickle
+    @save_to_pickle
+    def __call__(self, data):
+        posteriors = []
+        for seed in range(self.chains):
+            get_posterior_f = self.get_posterior_f_cons_partial(iters=self.iters, chains=1, seed=seed)
+            posteriors.append(get_posterior_f(data))
+        ans = multichain_posterior(reduce(merge_posteriors, posteriors))
+        ans.num_chains = self.chains
+        return ans
+        #return multichain_posterior(ans, self.chains)
+            
 
 class get_pystan_diffcovs_posterior_f(possibly_cached_folder):
     """
@@ -1647,10 +1686,18 @@ class plot_predictions_fig_f(possibly_cached):
         for predictor in self.predictors:
             prediction_series = predictor.get_prediction_series(datum, ts)
             predictor.plot_prediction_series(ax, prediction_series)
-        add_series_to_ax(ys, ax, 'black', 'true', 'solid')
+            try:
+                predictor.plot_wide_curves(ax, datum)
+            except AttributeError:
+                pass
+            try:
+                predictor.plot_narrow_curves(ax, datum)
+            except AttributeError:
+                pass
+        add_series_to_ax(ys, ax, 'black', 'true', 'solid', linewidth=3)
         try:
             abc_ys = pandas.Series({time:the_f(time,datum.s,datum.true_a,datum.true_b,datum.true_c) for time in np.linspace(0,50,200)})
-            add_series_to_ax(abc_ys, ax, 'green', 'sim', 'solid')
+            add_series_to_ax(abc_ys, ax, 'green', 'sim', 'solid', linewidth=3)
         except AttributeError:
             pass
         ax.legend()
@@ -1686,7 +1733,7 @@ class plot_all_predictions_fig_f(possibly_cached):
         for train_data, test_data in self.cv_f(data):
             predictors = keyed_list([get_predictor_f(train_data) for get_predictor_f in self.get_predictor_fs])
 
-            fig_structs += [[datum,plot_predictions_fig_f(predictors)(datum)] for datum in test_data]
+            fig_structs += [[datum,plot_predictions_fig_f(predictors)(datum)] for datum in test_data if datum.pid%10==0]
 
             #figs += [plot_predictions_fig_f(predictors)(datum) for datum in test_data]
 
@@ -2858,7 +2905,7 @@ def add_performances_to_ax(ax, perfs, color, name):
     percentiles.apply(fixed, axis=0)
     return ax
 
-def add_series_to_ax(s, ax, color, label, linestyle):
+def add_series_to_ax(s, ax, color, label, linestyle, linewidth=1.0):
     ax.plot(s.index, s, color=color, ls=linestyle, label=label)
 
 def the_f(t, s, a, b, c):
@@ -3150,7 +3197,79 @@ def merge_posteriors(p1, p2):
     """
     posteriors are just a dictionary.  merge samples using concat
     """
-    p = {}
+    p = keyed_dict({})
     for param in p1:
         p[param] = pandas.concat([p1[param],p2[param]])
     return p
+
+class multichain_posterior(keyed_dict):
+    """
+    the object returned by a merged_get_posterior_f
+    only this type of object(for now) can have its convergence statistic computed, when the method for getting samples by chain is requested.  later on add the method for original posterior object, which i've just been using a dict for
+    assuming that samples from separate chains were just appended to each other
+    """
+    #def __init__(self, posteriors, num_chains):
+    #    self.num_chains = num_chains
+    #    pdb.set_trace()
+    #    keyed_dict.__init__(posteriors)
+
+    def get_chainwise_posteriors(self):
+        l = [keyed_dict({}) for i in xrange(self.num_chains)]
+        for param, samples in self.iteritems():
+            bin_width = samples.shape[0] / self.num_chains
+            for i in xrange(self.num_chains):
+                low, high = i*bin_width, (i+1)*bin_width
+                l[i][param] = samples.iloc[low:high,:]
+        return l
+                
+
+class gelman_statistic_f(possibly_cached):
+    """
+    returns a dictionary.  calculate the single variable version for each stat
+    """
+
+    print_handler_f = staticmethod(write_DataFrame)
+
+    read_f = staticmethod(read_DataFrame)
+
+    def get_introspection_key(self):
+        return 'gelmanstat'
+
+    def key_f(self, posteriors):
+        return '%s_%s' % (self.get_key(), posteriors.get_key())
+
+    def location_f(self, posteriors):
+        return '%s/%s' % (global_stuff.data_home, 'gelmans')
+
+    
+    @save_to_file
+    def __call__(self, posteriors):
+        from rpy import r
+        d = pandas.DataFrame(index=['low','hi'])
+        chainwise = posteriors.get_chainwise_posteriors()
+        r.library('coda')
+        # for each variable, run single-variate test
+        for param in chainwise.__iter__().next():
+            # iterate through corresponding columns of the same multivariate variable
+            for all_cols, idx in itertools.izip(itertools.izip(*[itertools.imap(lambda x:x[1],posterior[param].iteritems()) for posterior in chainwise]), itertools.count(0)):
+                param_name = '%s_%d' % (param, idx)
+                print param_name
+                # put into R data structure to feed to R gelman statistic calculator
+                # make list of series in python, assign to x in R using assign
+                # directly run r code using multiple lines
+                r.assign('ls_%s' % param_name, all_cols)
+                r('mcmc_l_%s=list()' % param_name)
+                r.assign('num_chains_%s' % param_name, posteriors.num_chains)
+                r('for(i in 1:num_chains_%s){mcmc_l_%s[[i]]=mcmc(ls_%s[[i]])}' % (param_name, param_name, param_name))
+                r('res_%s=gelman.diag(mcmc_l_%s)' % (param_name, param_name))
+                res = r['res_%s' % param_name]
+                d[param_name] = pandas.Series({'low':res['psrf'][0][0], 'hi':res['psrf'][0][1]})
+
+        def is_important(s):
+            ms = ['B_a', 'B_b', 'B_c', 'phi_a', 'phi_b', 'phi_c', 'phi_m']
+            return sum([s.__contains__(m) for m in ms]) > 0
+
+        important_columns = [c for c in d.columns if is_important(c)]
+        d_new = d.ix[:,important_columns + list(d.columns)]
+
+        return pandas.DataFrame.transpose(d_new)
