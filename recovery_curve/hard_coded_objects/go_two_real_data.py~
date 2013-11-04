@@ -1,0 +1,4 @@
+
+pid_iterator = ps.filtered_pid_iterator(set_hard_coded_key_dec(ps.filtered_pid_iterator,'surgpids')(ps.all_ucla_pid_iterator(), ps.bin_f(ps.ucla_treatment_f(),ps.equals_bin([ps.ucla_treatment_f.surgery]))), ps.is_good_pid())
+
+data = ps.get_data_f(x_abc_f, init_f, actual_ys_f)(pid_iterator)
