@@ -1,5 +1,6 @@
 from management_stuff import *
 from prostate_specifics import *
+import pdb
 
 class plotter(keyed_object):
     """
@@ -25,7 +26,7 @@ class point_t_discrete_plotter(plotter):
         ax.plot(s.index, s, color=self.color, label=self.label, linestyle='None', marker='.')
             
 
-class distribution_t_discrete_plotter(point_plotter):
+class distribution_t_discrete_plotter(plotter):
     """ 
     for predictors that for a given t, returns a distribution (as a series)
     does plotting at discrete points - times at which there is data
@@ -33,7 +34,7 @@ class distribution_t_discrete_plotter(point_plotter):
 
     def __init__(self, width, num_points, color, label, predictor):
         self.width, self.num_points = width, num_points
-        point_plotter.__init__(self, color, label, predictor)
+        plotter.__init__(self, color, label, predictor)
         
     def __call__(self, ax, datum):
         for t in datum.ys.index:
@@ -79,11 +80,15 @@ class abc_distribution_predictor_curve_plotter(plotter):
         plotter.__init__(self, color, label, predictor)
 
     def __call__(self, ax, datum):
-        a_s, b_s, c_s = self.predictor(datum)
+        print datum.pid
+        abcs = self.predictor(datum)
         ts = np.linspace(self.low_t, self.high_t, self.num_t)
-        for (a_num,a), (b_num,b), (c_num,c) in itertools.izip(a_s.iteritems(), b_s.iteritems(), c_s.iteritems()):
+        a_label = self.label
+        for row_num, (a,b,c) in abcs.iterrows():
             ys = [the_f(t,datum.s,a,b,c) for t in ts]
-            ax.plot(ts, ys, color=self.color, label=self.label, linestyle='--', alpha=self.alpha)
+            ax.plot(ts, ys, color=self.color, label=a_label, linestyle='--', alpha=self.alpha)
+            a_label = None
+            
 
 class t_distribution_predictor_curve_plotter(plotter):
     """
@@ -101,5 +106,7 @@ class t_distribution_predictor_curve_plotter(plotter):
             N = len(predictions)
             d[t] = [y for y in predictions if random.random() < float(self.num_curves)/N]
         d = pandas.DataFrame(d)
+        a_label = self.label
         for i, ys in d.iteritems():
-            ax.plot(ts, ys, color=self.color, label=self.label, linestyle='None', alpha=self.alpha, marker=',')
+            ax.plot(ts, ys, color=self.color, label=a_label, linestyle='None', alpha=self.alpha, marker=',')
+            a_label = None

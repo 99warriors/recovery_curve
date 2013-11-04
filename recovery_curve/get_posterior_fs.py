@@ -1,3 +1,6 @@
+from recovery_curve.management_stuff import *
+from prostate_specifics import *
+
 class merged_get_posterior_f(possibly_cached):
 
     def get_introspection_key(self):
@@ -260,7 +263,7 @@ class get_pystan_diffcovs_beta_noise_posterior_f(possibly_cached_folder):
         pids = [_datum.pid for _datum in data]
         pid_to_i = {pid:i for pid,i in zip(pids,xrange(N))}
         d_A, d_B, d_C = {}, {}, {}
-        K = 150
+        K = 10000
         num_samples = len(traces['B_a'])
         to_keep = [z*int(num_samples/K) for z in range(K)]
         for i in xrange(N):

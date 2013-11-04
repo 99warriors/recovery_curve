@@ -264,13 +264,7 @@ class train_better_pops_f(possibly_cached):
         x, f, d = scipy.optimize.fmin_l_bfgs_b(obj_f, np.array([0.5, 0.5, 2.0]), approx_grad = True, bounds = [(0.01,.99),[0.01,.99],[0.01,None]])
         return pops(x[0],x[1],x[2])
 
-class median_asymptotic_abc_predictor(point_predictor):
-    """
-    for a test patient, looks at the posterior distributions of curves (as represented by (a,b,c) samples), and uses it to make prediction
-    
-    """
-    def __init__(self, posteriors):
-        pass
+
 
 
 
@@ -732,7 +726,7 @@ class plot_predictions_fig_f(possibly_cached):
         ax.plot(-1,datum.s,'bo')
         ax.set_xlim(-2,50)
         ax.set_ylim(-0.1, 1.1)
-        return ax
+        return fig
 
 class plot_all_predictions_fig_f(possibly_cached):
 
@@ -750,6 +744,7 @@ class plot_all_predictions_fig_f(possibly_cached):
     def __init__(self, trainer_plotter_cons_tuples, cv_f):
         self.trainer_plotter_cons_tuples, self.cv_f = trainer_plotter_cons_tuples, cv_f
 
+    @save_to_file
     def __call__(self, data):
         figs = []
         for train_data, test_data in self.cv_f(data):
@@ -761,7 +756,7 @@ class plot_all_predictions_fig_f(possibly_cached):
                     predictor = trainer(test_data)
                 plotters.append(plotter_cons(predictor))
             prediction_plotter = plot_predictions_fig_f(plotters)
-            figs += [prediction_plotter(datum) for datum in test_data]
+            figs += [prediction_plotter(datum) for datum in test_data if datum.pid%10==0]
         return figs
                 
             
@@ -1469,11 +1464,7 @@ class hard_coded_f(object):
         return self.val
 
 
-def get_categorical_fs(backing_f, bins):
-    """
-    given list of bins, backing feature, returns list of bin features
-    """
-    return keyed_list([bin_f(backing_f, bin) for bin in bins])
+
 
 def get_percentiles(l, percentiles):
     s_l = sorted(l.dropna())

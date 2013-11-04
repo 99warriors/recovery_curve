@@ -163,7 +163,7 @@ class get_data_f(possibly_cached):
 
 class beta_noise(keyed_object):
 
-    def get_introspection_key_(self):
+    def get_introspection_key(self):
         return '%s_%.3f' % ('betanoise', self.phi)
 
     def __init__(self, phi):
@@ -201,7 +201,7 @@ class simulated_get_data_f(possibly_cached):
         return data(l)
 
     def get_introspection_key(self):
-        return '%s_%s_%s_%s' % ('sim_data_f', self.params.get_key(), self.pops.get_key(), self.id_to_x_s_f.get_key())
+        return '%s_%s_%s_%s_%s' % ('sim_data_f', self.params.get_key(), self.pops.get_key(), self.id_to_x_s_f.get_key(), self.noise_f.get_key())
 
     def key_f(self, pid_iterator):
         return '%s_%s' % (self.get_key(), pid_iterator.get_key())
@@ -525,16 +525,19 @@ class score_modifier_f(keyed_object):
     def __call__(self, t, v):
         return t-self.shift, ((v+self.c) / (1.0+self.c))
 
-class push_0_up_ys_modifier(keyed_object):
+class avoid_boundaries_ys_modifier(keyed_object):
 
     def get_introspection_key(self):
-        return '%s_%s' % ('raise_y', self.delta)
+        return '%s_%s' % ('perturb', self.delta)
 
     def __init__(self, delta):
         self.delta = delta
 
     def __call__(self, t, v):
-        return t, max(v, self.delta)
+        if v < 0.5:
+            return t, max(v, self.delta)
+        if v >= 0.5:
+            return t, min(v, 1.0-self.delta)
 
 
 class actual_ys_f(possibly_cached):
@@ -666,7 +669,7 @@ class fake_pid_iterator(keyed_object):
         self.num = num
 
     def __iter__(self):
-        return xrange(self.num)
+        return iter(xrange(self.num))
 
 
 class is_good_pid(keyed_object):
@@ -730,3 +733,9 @@ class ys_bool_input_pid_f(keyed_object):
         s = self.s_f(pid)
         ys = self.actual_ys_f(pid)
         return self.filter_f(s, ys)
+
+def get_categorical_fs(backing_f, bins):
+    """
+    given list of bins, backing feature, returns list of bin features
+    """
+    return keyed_list([bin_f(backing_f, bin) for bin in bins])
