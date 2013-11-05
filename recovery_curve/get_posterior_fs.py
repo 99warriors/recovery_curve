@@ -26,6 +26,7 @@ class merged_get_posterior_f(possibly_cached):
         self.get_pops_f = self.get_posterior_f_cons_partial.args[0]
 
     @key
+    @cache
     #@read_from_pickle
     @save_to_pickle
     def __call__(self, data):
@@ -59,6 +60,7 @@ class parallel_merged_get_posterior_f(possibly_cached):
         self.get_pops_f = self.get_posterior_f_cons_partial.args[0]
 
     @key
+    @cache
     #@read_from_pickle
     @save_to_pickle
     def __call__(self, data):
