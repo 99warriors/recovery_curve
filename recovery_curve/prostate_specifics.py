@@ -1751,6 +1751,7 @@ class gelman_statistic_f(possibly_cached):
     @save_to_file
     def __call__(self, posteriors):
         from rpy import r
+
         d = pandas.DataFrame(index=['low','hi'])
         chainwise = posteriors.get_chainwise_posteriors()
         r.library('coda')
