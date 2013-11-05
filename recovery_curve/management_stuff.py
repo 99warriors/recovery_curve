@@ -172,55 +172,57 @@ class read_from_pickle(method_decorator):
 
     def __call__(self, inst, *args, **kwargs):
 
-        def run():
-            import pickle
-            full_pickle_path = inst.full_pickle_path_f(*args, **kwargs)
-            if os.path.exists(full_pickle_path):
+        import pickle
+        full_pickle_path = inst.full_pickle_path_f(*args, **kwargs)
+        if os.path.exists(full_pickle_path):
+            def read():
                 f = open(full_pickle_path, 'rb')
                 x = pickle.load(f)
                 f.close()
                 return x
-            else:
-                return self.f(inst, *args, **kwargs)
-
-        try:
-            l = inst.pickle_lock
-        except AttributeError:
-            return run()
-        else:
-            l.acquire()
             try:
-                return run()
-            finally:
-                l.release()
+                l = inst.pickle_lock
+            except AttributeError:
+                return read()
+            else:
+                l.acquire()
+                try:
+                    return read()
+                finally:
+                    l.release()
+        else:
+            return self.f(inst, *args, **kwargs)
+
+        
 
 
 class save_to_pickle(method_decorator):
 
     def __call__(self, inst, *args, **kwargs):
 
-        def run():
-            import pickle
-            x = self.f(inst, *args, **kwargs)
-            full_pickle_path = inst.full_pickle_path_f(*args, **kwargs)
-            location = os.path.dirname(full_pickle_path)
-            if not os.path.exists(location):
-                os.makedirs(location)
+        import pickle
+        x = self.f(inst, *args, **kwargs)
+        full_pickle_path = inst.full_pickle_path_f(*args, **kwargs)
+        location = os.path.dirname(full_pickle_path)
+        if not os.path.exists(location):
+            os.makedirs(location)
+        def save():
             f = open(full_pickle_path, 'wb')
             pickle.dump(x, f)
             f.close()
-            return x
-
         try:
             l = inst.pickle_lock
         except AttributeError:
-            return run()
+            save()
         else:
             l.acquire()
             try:
-                return run()
+                save()
             finally:
                 l.release()
+        return x
+
+        
 
 
 save_and_memoize = compose(key, compose(cache, save_to_file))
