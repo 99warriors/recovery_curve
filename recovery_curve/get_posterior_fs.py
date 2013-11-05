@@ -55,7 +55,7 @@ class parallel_merged_get_posterior_f(possibly_cached):
     read_f = staticmethod(read_posterior_traces)
 
     def __init__(self, get_posterior_f_cons_partial, iters, chains, num_processes):
-        self.get_posterior_f_cons_partial, self.iters, self.chains, self.num_processes = get_posterior_f_cons_partial, iters, chains, self.num_processes
+        self.get_posterior_f_cons_partial, self.iters, self.chains, self.num_processes = get_posterior_f_cons_partial, iters, chains, num_processes
         self.get_pops_f = self.get_posterior_f_cons_partial.args[0]
 
     @key
@@ -67,7 +67,7 @@ class parallel_merged_get_posterior_f(possibly_cached):
 
         get_posterior_f_queue = multiprocessing.Queue()
         for seed in xrange(self.chains):
-            q.put(self.get_posterior_f_cons_partial(iters=self.iters, chains=1, seed=seed))
+            get_posterior_f_queue.put(self.get_posterior_f_cons_partial(iters=self.iters, chains=1, seed=seed))
 
         posteriors = multiprocessing.Manager().list()
 
@@ -77,7 +77,7 @@ class parallel_merged_get_posterior_f(possibly_cached):
 
         workers = []
         for i in xrange(self.num_processes):
-            p = multiprocessing.Process(worker, args=(get_posterior_f_queue, data, posteriors))
+            p = multiprocessing.Process(target=worker, args=(get_posterior_f_queue, data, posteriors))
             p.start()
             workers.append(p)
 
