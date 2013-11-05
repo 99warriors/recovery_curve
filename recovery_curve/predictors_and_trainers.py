@@ -371,8 +371,8 @@ class abc_point_trainer_from_abc_distribution_trainer(keyed_object):
 
 class t_distribution_predictor_from_abc_distribution_predictor(t_distribution_predictor):
 
-    def __init__(self, abc_distribution_predictor, summarize_f):
-        self.abc_distribution_predictor, self.summarize_f = abc_distribution_predictor, summarize_f
+    def __init__(self, abc_distribution_predictor):
+        self.abc_distribution_predictor = abc_distribution_predictor
 
     def __call__(self, datum, t):
         a_s, b_s, c_s = self.abc_distribution_predictor(datum)
@@ -380,12 +380,12 @@ class t_distribution_predictor_from_abc_distribution_predictor(t_distribution_pr
 
 class t_distribution_trainer_from_abc_distribution_trainer(keyed_object):
 
-    def __init__(self, abc_distribution_trainer, summarize_f):
-        self.abc_distribution_trainer, self.summarize_f = abc_distribution_trainer, summarize_f
+    def __init__(self, abc_distribution_trainer):
+        self.abc_distribution_trainer = abc_distribution_trainer
 
     def __call__(self, *args):
         abc_distribution_predictor = self.abc_distribution_trainer(*args)
-        return t_distribution_predictor_from_abc_distribution_predictor(abc_distribution_predictor, summarize_f)
+        return t_distribution_predictor_from_abc_distribution_predictor(abc_distribution_predictor)
 
 class t_point_predictor_from_t_distribution_predictor(t_point_predictor):
 

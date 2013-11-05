@@ -587,7 +587,7 @@ class plot_single_posterior_f(possibly_cached):
         phi_bins = 40
 
         param_names = ['B_a','B_b','B_c','phi_a','phi_b','phi_c','phi_m']
-        true_vals = [-2,1,2, 0.05, 0.05, 0.05, 0.05]
+        true_vals = [-2,1,2, 0.05, 0.05, 0.05, 0.005]
 
         for param_name, true_val in zip(param_names, true_vals):
             for col_name, col in posteriors[param_name].iteritems():

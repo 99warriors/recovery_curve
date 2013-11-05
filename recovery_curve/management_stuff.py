@@ -135,6 +135,23 @@ class key(method_decorator):
             pass
         return x
             
+class sync(method_decorator):
+    """
+    decorates a method so that between instances of the class, the method can only be called by single instance at a time
+    this is useful if the method takes up lots of memory and you don't want to run out of memory
+    """
+    def __init__(self, f):
+        import multiprocessing
+        self.f = f
+        self.lock = multiprocessing.Lock()
+
+    def __call__(self, inst, *args, **kwargs):
+        self.lock.acquire()
+        try:
+            return self.f(inst, *args, **kwargs)
+        finally:
+            self.lock.release()
+
 
 class cache(method_decorator):
 
@@ -154,29 +171,57 @@ class cache(method_decorator):
 class read_from_pickle(method_decorator):
 
     def __call__(self, inst, *args, **kwargs):
-        import pickle
-        full_pickle_path = inst.full_pickle_path_f(*args, **kwargs)
-        if os.path.exists(full_pickle_path):
-            f = open(full_pickle_path, 'rb')
-            x = pickle.load(f)
-            f.close()
-            return x
+
+        def run():
+            import pickle
+            full_pickle_path = inst.full_pickle_path_f(*args, **kwargs)
+            if os.path.exists(full_pickle_path):
+                f = open(full_pickle_path, 'rb')
+                x = pickle.load(f)
+                f.close()
+                return x
+            else:
+                return self.f(inst, *args, **kwargs)
+
+        try:
+            l = inst.pickle_lock
+        except AttributeError:
+            return run()
         else:
-            return self.f(inst, *args, **kwargs)
+            l.acquire()
+            try:
+                return run()
+            finally:
+                l.release()
+
 
 class save_to_pickle(method_decorator):
 
     def __call__(self, inst, *args, **kwargs):
-        import pickle
-        x = self.f(inst, *args, **kwargs)
-        full_pickle_path = inst.full_pickle_path_f(*args, **kwargs)
-        location = os.path.dirname(full_pickle_path)
-        if not os.path.exists(location):
-            os.makedirs(location)
-        f = open(full_pickle_path, 'wb')
-        pickle.dump(x, f)
-        f.close()
-        return x
+
+        def run():
+            import pickle
+            x = self.f(inst, *args, **kwargs)
+            full_pickle_path = inst.full_pickle_path_f(*args, **kwargs)
+            location = os.path.dirname(full_pickle_path)
+            if not os.path.exists(location):
+                os.makedirs(location)
+            f = open(full_pickle_path, 'wb')
+            pickle.dump(x, f)
+            f.close()
+            return x
+
+        try:
+            l = inst.pickle_lock
+        except AttributeError:
+            return run()
+        else:
+            l.acquire()
+            try:
+                return run()
+            finally:
+                l.release()
+
 
 save_and_memoize = compose(key, compose(cache, save_to_file))
 memoize = compose(key, cache)

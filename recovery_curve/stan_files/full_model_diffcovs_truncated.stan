@@ -107,7 +107,7 @@ model{
 	      	    #vs[c] ~ normal(0, phi_m);	
 		    #lp__ <- lp__ + normal_log(vs[c], as[i], phi_m);
 	      	    #vs[c] ~ normal(m_as[i], 0.1);	
-	      	    vs[c] ~ normal(ss[i] * (1.0 - as[i] - (bs[i] * (1.0 - as[i]) * exp(-1.0 * ts[c] / cs[i]))), phi_m) T[0,];
+	      	    vs[c] ~ normal(ss[i] * (1.0 - as[i] - (bs[i] * (1.0 - as[i]) * exp(-1.0 * ts[c] / cs[i]))), phi_m) T[0,1];
 		    #vs[c] ~ gamma(s_c, (s_c - 1.0) / m_cs[i]);
 		    c <- c + 1;
 	      }
