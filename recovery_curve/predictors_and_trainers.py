@@ -354,8 +354,8 @@ class abc_point_predictor_from_abc_distribution_predictor(abc_point_predictor):
         self.abc_distribution_predictor, self.summarize_f = abc_distribution_predictor, summarize_f
 
     def __call__(self, datum):
-        a_s, b_s, c_s = self.abc_distribution_predictor(datum)
-        return self.summarize_f(a_s), self.summarize_f(b_s), self.summarize_f(c_s)
+        abc_s = self.abc_distribution_predictor(datum)
+        return self.summarize_f(abc_s['a']), self.summarize_f(abc_s['b']), self.summarize_f(abc_s['c'])
 
 
 class abc_point_trainer_from_abc_distribution_trainer(keyed_object):
@@ -375,8 +375,8 @@ class t_distribution_predictor_from_abc_distribution_predictor(t_distribution_pr
         self.abc_distribution_predictor = abc_distribution_predictor
 
     def __call__(self, datum, t):
-        a_s, b_s, c_s = self.abc_distribution_predictor(datum)
-        return summarize_f([the_f(t,datum.s,a,b,c) for (a_num, a), (b_num, b), (c_num, c) in itertools.izip(a_s.iteritems(), b_s.iteritems(), c_s.iteritems())])
+        abc_s = self.abc_distribution_predictor(datum)
+        return [the_f(t,datum.s,a,b,c) for num, (a,b,c) in abc_s.iterrows()]
 
 class t_distribution_trainer_from_abc_distribution_trainer(keyed_object):
 

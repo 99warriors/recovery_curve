@@ -55,7 +55,7 @@ class t_point_predictor_curve_plotter(single_curve_plotter):
     for predictors that take in any t, and returns a single point
     """
     def __call__(self, ax, datum):
-        s = pandas.Series({t:self.predictor(datum, t) for t in np.linspace(self.low_t, self.high_t, num_t)})
+        s = pandas.Series({t:self.predictor(datum, t) for t in np.linspace(self.low_t, self.high_t, self.num_t)})
         ax.plot(s.index, s, color=self.color, label=self.label, linestyle='--')
 
 class abc_point_predictor_curve_plotter(single_curve_plotter):
@@ -86,7 +86,7 @@ class abc_distribution_predictor_curve_plotter(plotter):
         a_label = self.label
         for row_num, (a,b,c) in abcs.iterrows():
             ys = [the_f(t,datum.s,a,b,c) for t in ts]
-            ax.plot(ts, ys, color=self.color, label=a_label, linestyle='--', alpha=self.alpha)
+            ax.plot(ts, ys, color=self.color, label=a_label, linestyle='-', alpha=self.alpha)
             a_label = None
             
 

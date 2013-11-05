@@ -756,7 +756,8 @@ class plot_all_predictions_fig_f(possibly_cached):
                     predictor = trainer(test_data)
                 plotters.append(plotter_cons(predictor))
             prediction_plotter = plot_predictions_fig_f(plotters)
-            figs += [prediction_plotter(datum) for datum in test_data if datum.pid%10==0]
+
+            figs += [prediction_plotter(datum) for datum in test_data if int(datum.pid)%10==0]
         return figs
                 
             
