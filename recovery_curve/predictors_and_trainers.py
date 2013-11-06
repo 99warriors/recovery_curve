@@ -1,5 +1,6 @@
 from management_stuff import *
 from prostate_specifics import *
+import pdb
 
 class abc_point_predictor(keyed_object):
     
@@ -42,7 +43,7 @@ class logreg_predictor(t_point_predictor):
     def __call__(self, datum, time):
         return logistic(self.params[time].dot(datum.xa))
 
-class logreg_predictor_trainer(possibly_cached):
+class logreg_trainer(possibly_cached):
     """
     returns trained logreg predictor
     """
@@ -100,7 +101,7 @@ class logregshape_predictor(t_point_predictor):
     def __call__(self, datum, time):
         return datum.s*logistic(self.params[time].dot(datum.xa))
 
-class logregshape_predictor_trainer(possibly_cached):
+class logregshape_trainer(possibly_cached):
     """
     returns trained logreg predictor, where logistic regression predicts the value *proportional* to s
     generative error term assumed to have variance proportional to s
@@ -160,7 +161,7 @@ class logregshapeunif_predictor(t_point_predictor):
     def __call__(self, datum, time):
         return datum.s*logistic(self.params[time].dot(datum.xa))
 
-class logregshapeunif_predictor_trainer(possibly_cached):
+class logregshapeunif_trainer(possibly_cached):
     """
     returns trained logreg predictor, where logistic regression predicts the value *proportional* to s
     generative error term assumed to have independent of initial value
@@ -218,7 +219,7 @@ class Bs_t_distribution_predictor(t_distribution_predictor):
         return [the_f(time, datum.s, g_a(self.pops.pop_a, datum.xa, B_a), g_b(self.pops.pop_b, datum.xb, B_b), g_c(self.pops.pop_c, datum.xc, B_c)) for (B_a_num, B_a), (B_b_num, B_b), (B_c_num, B_c) in itertools.izip(self.params['B_a'].iterrows(), self.params['B_b'].iterrows(), self.params['B_c'].iterrows())]
 
 
-class Bs_t_distribution_predictor_trainer(keyed_object):
+class Bs_t_distribution_trainer(keyed_object):
 
     def __init__(self, get_posterior_f):
         self.get_posterior_f = get_posterior_f
@@ -254,7 +255,7 @@ class prior_predictor(t_point_predictor):
         return the_f(time, datum.s, self.pops.pop_a, self.pops.pop_b, self.pops.pop_c)
 
 
-class prior_predictor_trainer(keyed_object):
+class prior_trainer(keyed_object):
 
     display_color = prior_predictor.display_color
 
@@ -287,7 +288,7 @@ class builtin_abc_distribution_predictor(abc_distribution_predictor):
     def __call__(self, datum):
         return self.test_patient_abc_samples_d[datum.pid]
 
-class builtin_regular_abc_distribution_predictor_trainer(keyed_object):
+class builtin_regular_abc_distribution_trainer(keyed_object):
     """
     get_posterior_f has to be one for a model that includes test data as missing data
     assumes that get_posterior returns separate a,b,c's for the test_data
@@ -307,7 +308,7 @@ class builtin_regular_abc_distribution_predictor_trainer(keyed_object):
         return builtin_abc_distribution_predictor(d)
 
 
-class builtin_auto_abc_distribution_predictor_trainer(keyed_object):
+class builtin_auto_abc_distribution_trainer(keyed_object):
     """
     passes to trained model the abc's used for training.  suitable for use with self_cv only
     assumes get_posterior does not take in any test_data
@@ -322,7 +323,7 @@ class builtin_auto_abc_distribution_predictor_trainer(keyed_object):
         Bs = posteriors['Bs']
         Cs = posteriors['Cs']
         d = {}
-        for datum in test_data:
+        for datum in train_data:
             d[datum.pid] = pandas.DataFrame({'a':As[datum.pid], 'b':As[datum.pid], 'c':Cs[datum.pid]})
         return builtin_abc_distribution_predictor(d)
 
@@ -353,8 +354,8 @@ class abc_point_predictor_from_abc_distribution_predictor(abc_point_predictor):
         self.abc_distribution_predictor, self.summarize_f = abc_distribution_predictor, summarize_f
 
     def __call__(self, datum):
-        a_s, b_s, c_s = self.abc_distribution_predictor(datum)
-        return self.summarize_f(a_s), self.summarize_f(b_s), self.summarize_f(c_s)
+        abc_s = self.abc_distribution_predictor(datum)
+        return self.summarize_f(abc_s['a']), self.summarize_f(abc_s['b']), self.summarize_f(abc_s['c'])
 
 
 class abc_point_trainer_from_abc_distribution_trainer(keyed_object):
@@ -370,21 +371,21 @@ class abc_point_trainer_from_abc_distribution_trainer(keyed_object):
 
 class t_distribution_predictor_from_abc_distribution_predictor(t_distribution_predictor):
 
-    def __init__(self, abc_distribution_predictor, summarize_f):
-        self.abc_distribution_predictor, self.summarize_f = abc_distribution_predictor, summarize_f
+    def __init__(self, abc_distribution_predictor):
+        self.abc_distribution_predictor = abc_distribution_predictor
 
     def __call__(self, datum, t):
-        a_s, b_s, c_s = self.abc_distribution_predictor(datum)
-        return summarize_f([the_f(t,datum.s,a,b,c) for (a_num, a), (b_num, b), (c_num, c) in itertools.izip(a_s.iteritems(), b_s.iteritems(), c_s.iteritems())])
+        abc_s = self.abc_distribution_predictor(datum)
+        return [the_f(t,datum.s,a,b,c) for num, (a,b,c) in abc_s.iterrows()]
 
 class t_distribution_trainer_from_abc_distribution_trainer(keyed_object):
 
-    def __init__(self, abc_distribution_trainer, summarize_f):
-        self.abc_distribution_trainer, self.summarize_f = abc_distribution_trainer, summarize_f
+    def __init__(self, abc_distribution_trainer):
+        self.abc_distribution_trainer = abc_distribution_trainer
 
     def __call__(self, *args):
         abc_distribution_predictor = self.abc_distribution_trainer(*args)
-        return t_distribution_predictor_from_abc_distribution_predictor(abc_distribution_predictor, summarize_f)
+        return t_distribution_predictor_from_abc_distribution_predictor(abc_distribution_predictor)
 
 class t_point_predictor_from_t_distribution_predictor(t_point_predictor):
 

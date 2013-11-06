@@ -45,7 +45,7 @@ parameters{
 	real<lower=0,upper=1> phi_a;
 	real<lower=0,upper=1> phi_b;
 	real<lower=0,upper=1> phi_c;
-	real<lower=0> phi_m;
+	real<lower=0,upper=1> phi_m;
 	
 	real<lower=0,upper=1> as[N];	
 	real<lower=0,upper=1> bs[N];
@@ -57,6 +57,7 @@ transformed parameters{
 	real<lower=0> s_a;
 	real<lower=0> s_b;		
 	real<lower=1> s_c;
+	real<lower=0> s_m;		
 
 	real<lower=0,upper=1> m_as[N];
 	real<lower=0,upper=1> m_bs[N];

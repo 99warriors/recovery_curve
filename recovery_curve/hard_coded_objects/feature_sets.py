@@ -1,6 +1,6 @@
 from recovery_curve.prostate_specifics import *
 from recovery_curve.management_stuff import *
-
+from recovery_curve.getting_data import *
 
 
 default_simple_indicators = set_hard_coded_key_dec(keyed_list, 'default_simple_indicators')(get_categorical_fs(ucla_cov_f(ucla_cov_f.age), [bin(None,55), bin(55,65), bin(65,None)]) + get_categorical_fs(s_f(ys_f(ys_f.sexual_function)), [bin(0,0.41), bin(0.41,0.6), bin(0.6,0.8), bin(0.8,None)]) + [ones_f()])
