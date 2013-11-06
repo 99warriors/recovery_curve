@@ -293,6 +293,9 @@ class keyed_object(object):
         return '%s/%s' % (self.get_location(), self.get_key())
 
     def __cmp__(self, other):
+        if not isinstance(other, keyed_object):
+            return True
+            return False
         return self.get_key() == other.get_key()
 
 
