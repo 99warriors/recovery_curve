@@ -161,7 +161,7 @@ class keyed_partial(functools.partial, keyed_object):
     """
     def get_introspection_key(self):
         import string
-        return string.join([arg.get_key() for arg in self.args], sep='_')
+        return '%s_%s' % (self.func.__name__, string.join([arg.get_key() for arg in self.args], sep='_'))
         
 
 
