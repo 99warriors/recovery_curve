@@ -964,7 +964,7 @@ class get_pystan_diffcovs_truncated_normal_with_test_posterior_f(possibly_cached
 
 
 
-        fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True)
+        fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=False)
 
         traces = fit.extract(permuted=True)
         

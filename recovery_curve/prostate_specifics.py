@@ -694,7 +694,10 @@ class cross_validated_scores_f(possibly_cached):
     def __call__(self, data):
         fold_scores = []
         for train_data, test_data in self.cv_f(data):
-            predictor = self.get_predictor_f(train_data)
+            if self.get_predictor_f.normal():
+                predictor = self.get_predictor_f(train_data)
+            else:
+                predictor = self.get_predictor_f(train_data, test_data)
             fold_scores.append(pandas.DataFrame({datum.pid:{time:predictor(datum, time) for time in self.times} for datum in test_data}))
         return keyed_DataFrame(pandas.concat(fold_scores, axis=1))
 
@@ -893,7 +896,19 @@ class performance_series_f(possibly_cached):
     @save_and_memoize
     def __call__(self, scores):
 
-        losses = pandas.DataFrame({pid:{time:self.loss_f(self.data[pid], time, score) for time, score in scores.iteritems()} for pid, scores in scores.iteritems()})
+        losses_d = {}
+        for pid, scores in scores.iteritems():
+            temp_d = {}
+            print pid
+            print scores
+            print self.data.d[pid].ys
+            for time, score in scores.iteritems():
+                if time in self.data.d[pid].ys.index:
+                    temp_d[time] = self.loss_f(self.data.d[pid], time, score)
+            losses_d[pid] = pandas.Series(temp_d)
+        losses = pandas.DataFrame(losses_d)
+
+        #losses = pandas.DataFrame({pid:{time:self.loss_f(self.data.d[pid], time, score) for time, score in scores.iteritems() if not np.isnan(score)} for pid, scores in scores.iteritems()})
 
 
         # have raw scores for each patient
@@ -1044,6 +1059,13 @@ class stratified_model_comparer_f(possibly_cached):
     print_handler_f = staticmethod(figure_to_pdf)
 
     read_f = staticmethod(not_implemented_f)
+
+"""
+most general: specify (something that generates output, something that plots the output
+"""
+
+
+
 
 
 """
