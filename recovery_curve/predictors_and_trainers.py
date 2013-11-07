@@ -47,6 +47,10 @@ class logreg_trainer(possibly_cached):
     """
     returns trained logreg predictor
     """
+
+    def normal(self):
+        return True
+
     display_color = logreg_predictor.display_color
 
     display_name = logreg_predictor.display_name
@@ -106,6 +110,10 @@ class logregshape_trainer(possibly_cached):
     returns trained logreg predictor, where logistic regression predicts the value *proportional* to s
     generative error term assumed to have variance proportional to s
     """
+
+    def normal(self):
+        return True
+
     display_color = logregshape_predictor.display_color
 
     display_name = logregshape_predictor.display_name
@@ -166,6 +174,10 @@ class logregshapeunif_trainer(possibly_cached):
     returns trained logreg predictor, where logistic regression predicts the value *proportional* to s
     generative error term assumed to have independent of initial value
     """
+    
+    def normal(self):
+        return True
+
     display_color = logregshapeunif_predictor.display_color
 
     display_name = logregshapeunif_predictor.display_name
@@ -221,17 +233,17 @@ class Bs_t_distribution_predictor(t_distribution_predictor):
 
 class Bs_t_distribution_trainer(keyed_object):
 
+    def normal(self):
+        return self.get_posterior_f.normal()
+
     def __init__(self, get_posterior_f):
         self.get_posterior_f = get_posterior_f
 
     def get_introspection_key(self):
         return '%s_%s' % ('Bs_distribution_trainer', self.get_posterior_f.get_key())
 
-    def __call__(self, train_data, test_data=None):
-        if test_data == None:
-            posteriors = self.get_posterior_f(train_data)
-        else:
-            posteriors = self.get_posterior_f(train_data, test_data)
+    def __call__(self, *args):
+        posteriors = self.get_posterior_f(*args)
         pops = posteriors.get_pop_f(train_data)
         params = {'B_a':posteriors['B_a'], 'B_b':posteriors['B_b'], 'B_c':posteriors['B_c']}
         return Bs_t_distribution_predictor(params, pops)
@@ -256,6 +268,9 @@ class prior_predictor(t_point_predictor):
 
 
 class prior_trainer(keyed_object):
+
+    def normal(self):
+        return True
 
     display_color = prior_predictor.display_color
 
@@ -294,6 +309,9 @@ class builtin_regular_abc_distribution_trainer(keyed_object):
     assumes that get_posterior returns separate a,b,c's for the test_data
     """
 
+    def normal(self):
+        return False
+
     def __init__(self, get_posterior_f):
         self.get_posterior_f = get_posterior_f
 
@@ -304,7 +322,7 @@ class builtin_regular_abc_distribution_trainer(keyed_object):
         Cs_test = posteriors['Cs_test']
         d = {}
         for datum in test_data:
-            d[datum.pid] = pandas.DataFrame({'a':As[datum.pid], 'b':Bs[datum.pid], 'c':Cs[datum.pid]})
+            d[datum.pid] = pandas.DataFrame({'a':As_test[datum.pid], 'b':Bs_test[datum.pid], 'c':Cs_test[datum.pid]})
         return builtin_abc_distribution_predictor(d)
 
 
@@ -313,6 +331,9 @@ class builtin_auto_abc_distribution_trainer(keyed_object):
     passes to trained model the abc's used for training.  suitable for use with self_cv only
     assumes get_posterior does not take in any test_data
     """
+
+    def normal(self):
+        return True
 
     def __init__(self, get_posterior_f):
         self.get_posterior_f = get_posterior_f
@@ -342,11 +363,14 @@ class t_point_trainer_from_abc_point_trainer(keyed_object):
     takes in a abc_trainer.  returns t'ed version of the returned abc_trainer
     """
 
+    def normal(self):
+        return self.abc_trainer.normal()
+
     def __init__(self, abc_trainer):
-        self.abc_trainer = abc_trainer
+        self.abc_point_trainer = abc_point_trainer
 
     def __call__(self, *args):
-        return t_point_predictor_from_abc_point_predictor(self.abc_trainer(*args))
+        return t_point_predictor_from_abc_point_predictor(self.abc_point_trainer(*args))
 
 class abc_point_predictor_from_abc_distribution_predictor(abc_point_predictor):
 
@@ -359,6 +383,9 @@ class abc_point_predictor_from_abc_distribution_predictor(abc_point_predictor):
 
 
 class abc_point_trainer_from_abc_distribution_trainer(keyed_object):
+
+    def normal(self):
+        return self.abc_distribution_trainer.normal()
 
     def __init__(self, abc_distribution_trainer, summarize_f):
         self.abc_distribution_trainer, self.summarize_f = abc_distribution_trainer, summarize_f
@@ -380,6 +407,9 @@ class t_distribution_predictor_from_abc_distribution_predictor(t_distribution_pr
 
 class t_distribution_trainer_from_abc_distribution_trainer(keyed_object):
 
+    def normal(self):
+        return self.abc_distribution_trainer.normal()
+
     def __init__(self, abc_distribution_trainer):
         self.abc_distribution_trainer = abc_distribution_trainer
 
@@ -393,9 +423,20 @@ class t_point_predictor_from_t_distribution_predictor(t_point_predictor):
         self.t_distribution_predictor, self.summarize_f = t_distribution_predictor, summarize_f
 
     def __call__(self, datum, t):
+        if t==1: print datum.pid
         return self.summarize_f(self.t_distribution_predictor(datum, t))
 
 class t_point_trainer_from_t_distribution_trainer(keyed_object):
+
+    def normal(self):
+        return self.t_distribution_trainer.normal()
+
+    display_name = 'pointwise_mean'
+
+    display_color = 'red'
+
+    def get_introspection_key(self):
+        return 'pointwise_trainer'
 
     def __init__(self, t_distribution_trainer, summarize_f):
         self.t_distribution_trainer, self.summarize_f = t_distribution_trainer, summarize_f
