@@ -95,7 +95,10 @@ class bin_f(feat):
 
     @raise_if_na
     def __call__(self, pid):
-        raw = self.backing_f(pid)
+        try:
+            raw = self.backing_f(pid)
+        except:
+            return 0
         return int(raw in self.bin)
 
 
@@ -160,6 +163,48 @@ class get_data_f(possibly_cached):
         l = sorted(l, key = lambda x: x.pid)
         return data(keyed_list(l))
 
+
+
+class reduce_data_f(possibly_cached):
+
+    def __init__(self, proportion):
+        self.proportion = proportion
+
+    @key
+    def __call__(self, _data):
+        to_keep = data([_data[int(i/float(self.proportion))] for i in range(int(self.proportion*len(_data)))])
+        return to_keep
+        
+    def get_introspection_key(self):
+        return '%s_%.2f' % ('reduced', self.proportion)
+
+    def key_f(self, _data):
+        return '%s_%s' % (self.get_key(), _data.get_key())
+
+    def location_f(self, pid_iterator):
+        return '%s/%s/%s' % (global_stuff.data_home, 'data', self.get_key())
+
+    print_handler_f = staticmethod(folder_adapter(write_diffcovs_data))
+
+    read_f = staticmethod(read_diffcovs_data)
+
+
+class filtered_by_column_label_DataFrame(keyed_object):
+
+    def get_introspection_key(self):
+        return '%s_%s' % ('filtered', self.filter_f.get_key())
+
+    def __init__(self, filter_f):
+        self.filter_f = filter_f
+
+    def location_f(self, data):
+        return data.get_location()
+
+    def key_f(self, data):
+        return '%s_%s'% (self.get_key(), data.get_key())
+    @key
+    def __call__(self, data):
+        return keyed_DataFrame(data.loc[:,[pid for pid in data.columns if self.filter_f(pid)]])
 
 class beta_noise(keyed_object):
 
@@ -507,6 +552,68 @@ class generic_filtered_get_data_f(possibly_cached):
         filter_f = compose_expanded_args(self.ys_bool_input_curve_f, lambda _datum: (_datum.s, _datum.ys))
         return data(filter(filter_f, _data))
 
+
+
+class asymptotic_data_from_data(possibly_cached):
+
+    def location_f(self, data):
+        return '%s/%s' % (data.get_location(), 'asymp')
+    
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def get_introspection_key(self):
+        return '%s_%.2f_%.2f' % ('asymp_data', self.c_cutoff, self.quorum)
+
+    def __init__(self, c_cutoff, quorum):
+        self.c_cutoff, self.quorum = c_cutoff, quorum
+
+    @key
+#    @save_to_file
+    def __call__(self, _data):
+        """
+        for each datapoint, look at c, if it's really big, keep timepoints after some cutoff - 2 x fit c value
+        """
+        asym_data_l = []
+        for _datum in _data:
+            a,b,c = get_curve_abc(_datum.s, _datum.ys)
+            cutoff = self.c_cutoff * c
+            ys_to_use = _datum.ys[_datum.ys.index > cutoff]
+            if len(ys_to_use) > self.quorum:
+                asym_data_l.append(datum_for_asymptotic(_datum.pid, _datum.xa, _datum.s, ys_to_use))
+        return data(asym_data_l)
+
+
+class initial_value_data(possibly_cached):
+
+    def location_f(self, data):
+        return '%s/%s' % (data.get_location(), 'initial')
+    
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def get_introspection_key(self):
+        return '%s_%.2f_%.2f' % ('initial_data', self.num_points, self.window_width)
+
+    def __init__(self, num_points, window_width):
+        self.num_points, self.window_width = num_points, window_width
+
+    @key
+    def __call__(self, _data):
+        """
+        for each datapoint, fit abc to extrapolate value at 0.  then generate several values in small window around it
+        """
+        data_l = []
+        for _datum in _data:
+            a,b,c = get_curve_abc(_datum.s, _datum.ys)
+            time_0_val = _datum.s * (1.0 - a) * (1.0 - b)
+            import random
+            ys_to_use = pandas.Series([random.uniform(max(0.0,time_0_val-self.window_width), min(1.0,time_0_val+self.window_width)) for i in xrange(self.num_points)])
+            data_l.append(datum_for_asymptotic(_datum.pid, _datum.xa, _datum.s, ys_to_use))
+        
+        return data(data_l)
+
+
 """
 related to ys_f, as in getting the series
 """
@@ -642,6 +749,18 @@ class all_ucla_pid_iterator(keyed_object):
     def __iter__(self):
         return iter(self.pids)
 
+
+class single_pid_iterator(keyed_object):
+
+    def __init__(self, it):
+        self.it = it
+
+    def get_introspection_key(self):
+        return str(self.it)
+
+    def __iter__(self):
+        return iter([self.it])
+
 class filtered_pid_iterator(keyed_object):
 
     def get_introspection_key(self):
@@ -671,6 +790,17 @@ class fake_pid_iterator(keyed_object):
     def __iter__(self):
         return iter(xrange(self.num))
 
+
+class not_flat_pid(keyed_object):
+    
+    def get_introspection_key(self):
+        return 'not_flat'
+
+    def __init__(self):
+        self.pids = pandas.read_csv(global_stuff.not_flat_file, header=None,index_col=None, squeeze=True, converters={0:str}).tolist()
+
+    def __call__(self, pid):
+        return pid in self.pids
 
 class is_good_pid(keyed_object):
     
@@ -735,6 +865,12 @@ class ys_bool_input_pid_f(keyed_object):
         return self.filter_f(s, ys)
 
 def get_categorical_fs(backing_f, bins):
+    """
+    given list of bins, backing feature, returns list of bin features
+    """
+    return keyed_list([bin_f(backing_f, bin) for bin in bins[0:-1]])
+
+def get_categorical_fs_all_levels(backing_f, bins):
     """
     given list of bins, backing feature, returns list of bin features
     """

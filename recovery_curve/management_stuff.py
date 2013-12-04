@@ -269,6 +269,16 @@ class keyed_object(object):
     def get_introspection_key(self):
         raise NotImplementedError
 
+    def get_object_key(self, obj):
+        try:
+            return obj.get_key()
+        except AttributeError:
+            if isinstance(obj, int):
+                return '%d' % obj
+            elif isinstance(obj, float):
+                return '%.2f' % obj
+            else:
+                raise NotImplementedError
 
     def get_key(self):
         try:
@@ -326,6 +336,7 @@ class possibly_cached(keyed_object):
         """
         refers to possible full path of the object returned by the function, not the function itself
         """
+        #print self, args, kwargs, self.location_f, 'filepath'
         return '%s/%s' % (self.location_f(*args, **kwargs), self.key_f(*args, **kwargs))
 
     def full_pickle_path_f(self, *args, **kwargs):
@@ -432,7 +443,7 @@ def set_location_dec(f, location):
 
     return decorated_f
 
-def save_at_specified_path_dec(f, full_path):
+def save_at(f, full_path):
     """
     decorator for factory f's __call__ that after __call__, saves object at specified path
     """
