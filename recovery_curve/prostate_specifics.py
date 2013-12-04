@@ -161,7 +161,7 @@ class keyed_partial(functools.partial, keyed_object):
     """
     def get_introspection_key(self):
         import string
-        return '%s_%s' % (self.func.__name__, string.join([arg.get_key() for arg in self.args], sep='_'))
+        return '%s_%s' % (self.func.__name__, string.join([self.get_object_key(arg) for arg in self.args], sep='_'))
         
 
 
@@ -334,12 +334,107 @@ class get_diffcovs_posterior_f(possibly_cached_folder):
     
 
 
+class abc_trace_plots(possibly_cached):
+    """
+    plot traces for a,b,c parameters use for fitting(not for prediction).  plot a,b,c for a patient on the same page
+    """
+    def get_introspection_key(self):
+        return 'fit_abc_traces'
+
+    def key_f(self, posteriors):
+        return '%s_%s' % (self.get_key(), posteriors.get_key())
+
+    def location_f(self, posteriors):
+        return '%s/%s' % (global_stuff.for_dropbox, 'trace_plots')
+
+    print_handler_f = staticmethod(multiple_figures_to_pdf)
+
+    @save_to_file
+    def __call__(self, posteriors):
+        figs = []
+        As = posteriors['As']
+        Bs = posteriors['Bs']
+        Cs = posteriors['Cs']
+        pids = As.columns
+        spacer=10
+        for pid in pids:
+            print pid
+            fig = plt.figure()
+            fig.subplots_adjust(hspace=0.6, wspace=0.3)
+            a_ax = fig.add_subplot(3,1,1)
+            a_ax.set_title('a_%s' % pid)
+            a_ax.set_xlabel('iteration')
+            a_trace = As[pid]
+            num_traces = a_trace.shape[0]
+            a_idx = np.arange(0,num_traces,spacer)
+            a_ax.plot(a_idx, a_trace.iloc[a_idx])
+
+            b_ax = fig.add_subplot(3,1,2)
+            b_ax.set_title('b_%s' % pid)
+            b_ax.set_xlabel('iteration')
+            b_trace = Bs[pid]
+            num_traces = b_trace.shape[0]
+            b_idx = np.arange(0,num_traces,spacer)
+            b_ax.plot(b_idx, b_trace.iloc[b_idx])
+
+            c_ax = fig.add_subplot(3,1,3)
+            c_ax.set_title('c_%s' % pid)
+            c_ax.set_xlabel('iteration')
+            c_trace = Cs[pid]
+            num_traces = c_trace.shape[0]
+            c_idx = np.arange(0,num_traces,spacer)
+            c_ax.plot(c_idx, c_trace.iloc[c_idx])
+            figs.append(fig)
+        
+        return figs
+
+class summary_traces(possibly_cached):
+
+    """
+    1 roll for each B
+    1 roll for phi's
+    """
+    def get_introspection_key(self):
+        return 'fit_param_traces'
+
+    def key_f(self, posteriors):
+        return '%s_%s' % (self.get_key(), posteriors.get_key())
+
+    def location_f(self, posteriors):
+        return '%s/%s' % (global_stuff.for_dropbox, 'trace_plots')
+
+    print_handler_f = staticmethod(multiple_figures_to_pdf)
 
 
+    @save_to_file
+    def __call__(self, posteriors):
 
+        B_param_names = ['B_a','B_b','B_c']
+        phi_param_names = ['phi_a', 'phi_b', 'phi_c', 'phi_m']
+        all_pp_rolls = []
+        spacer = 10
+        for B_param_name in B_param_names:
+            traces = posteriors[B_param_name]
+            roll = pp_roll(3,1, hspace=0.5,wspace=0.5, title=B_param_name)
+            for col_name, trace in traces.iteritems():
+                ax = roll.get_axes()
+                idx = np.arange(0,traces.shape[0],spacer)
+                trace_to_plot = trace.iloc[idx]
+                ax.plot(idx, trace_to_plot)
+                ax.set_title(col_name)
+            all_pp_rolls.append(roll)
 
-
-
+        roll = pp_roll(3,1,hspace=0.5,wspace=0.5)
+        for phi_param_name in phi_param_names:
+            ax = roll.get_axes()
+            trace = posteriors[phi_param_name]
+            idx = np.arange(0,trace.shape[0],spacer)
+            trace_to_plot = trace.iloc[idx]
+            ax.plot(idx, trace_to_plot)
+            ax.set_title(phi_param_name)
+        all_pp_rolls.append(roll)
+        return reduce(lambda x,y:x + y.figs, all_pp_rolls, [])
+            
 
 class print_diffcovs_posterior_means(possibly_cached):
     """
@@ -354,7 +449,7 @@ class print_diffcovs_posterior_means(possibly_cached):
         return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        return '%s/%s' % (global_stuff.data_home, 'posterior_means')
+        return '%s/%s' % (global_stuff.for_dropbox, 'posterior_means')
 
     print_handler_f = staticmethod(multiple_figures_to_pdf)
 
@@ -409,7 +504,7 @@ class print_diffcovs_posterior_means_effect(possibly_cached):
         return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        return '%s/%s' % (global_stuff.data_home, 'posterior_means')
+        return '%s/%s' % (global_stuff.for_dropbox, 'posterior_means')
 
     print_handler_f = staticmethod(multiple_figures_to_pdf)
 
@@ -423,7 +518,10 @@ class print_diffcovs_posterior_means_effect(possibly_cached):
     def __call__(self, data):
         posteriors = []
         for train_data, test_data in self.cv_f(data):
-            posteriors.append(self.get_posterior_f(train_data))
+            try:
+                posteriors.append(self.get_posterior_f(train_data))
+            except TypeError:
+                posteriors.append(self.get_posterior_f(train_data, test_data))
 
         param_names = ['B_a', 'B_b', 'B_c']
         figs = []
@@ -442,12 +540,13 @@ class print_diffcovs_posterior_means_effect(possibly_cached):
             fold_posteriors = [posterior[param_name] for posterior in posteriors]
             for fold_posterior in fold_posteriors:
                 fold_posterior_mean = fold_posterior.mean()
+                fold_posterior_mean = fold_posterior_mean[sorted(fold_posterior_mean.index,key = lambda x:x.get_key())]
                 num_feat = len(fold_posterior_mean)
                 ax.set_xlim(-1,num_feat)
                 ax.set_ylim(-5,5)
                 ax.plot(range(num_feat), fold_posterior_mean, linestyle='None', marker='o', color='black')
 
-                ax.plot(range(num_feat), D.dot(fold_posterior_mean), linestyle='None', marker='o', color='blue')                
+                #ax.plot(range(num_feat), D.dot(fold_posterior_mean), linestyle='None', marker='o', color='blue')                
                 ax.set_xticks(range(num_feat))
                 ax.set_xticklabels(fold_posterior_mean.index, rotation='vertical')
                 xticks = ax.get_xticklabels()
@@ -471,7 +570,7 @@ class plot_diffcovs_posterior_f(possibly_cached):
         return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        return '%s/%s' % (global_stuff.data_home, 'posterior_plots')
+        return '%s/%s' % (global_stuff.for_dropbox, 'posterior_plots')
 
     print_handler_f = staticmethod(multiple_figures_to_pdf)
 
@@ -494,7 +593,10 @@ class plot_diffcovs_posterior_f(possibly_cached):
         posteriors = []
         alpha=0.25
         for train_data, test_data in self.cv_f(data):
-            posteriors.append(self.get_posterior_f(train_data))
+            try:
+                posteriors.append(self.get_posterior_f(train_data))
+            except TypeError:
+                posteriors.append(self.get_posterior_f(train_data, test_data))
 
         B_a_iteritems = [posterior['B_a'].iteritems() for posterior in posteriors]
         for feat_cols in itertools.izip(*B_a_iteritems):
@@ -638,6 +740,14 @@ class mean_f(keyed_object):
             count += 1
         return total/count
 
+class median_f(keyed_object):
+
+    def get_introspection_key(self):
+        return 'medianf'
+
+    def __call__(self, l):
+        return np.median(l)
+
 class plot_logreg_coefficients_fig_f(possibly_cached):
     """
     takes in data, uses a get_logreg_predictor_f to get a trainer containing the coefficients
@@ -690,7 +800,7 @@ class cross_validated_scores_f(possibly_cached):
         self.get_predictor_f, self.cv_f, self.times = get_predictor_f, cv_f, times
 
     @key
-    @save_and_memoize
+    @memoize
     def __call__(self, data):
         fold_scores = []
         for train_data, test_data in self.cv_f(data):
@@ -698,7 +808,13 @@ class cross_validated_scores_f(possibly_cached):
                 predictor = self.get_predictor_f(train_data)
             else:
                 predictor = self.get_predictor_f(train_data, test_data)
-            fold_scores.append(pandas.DataFrame({datum.pid:{time:predictor(datum, time) for time in self.times} for datum in test_data}))
+
+
+            def _per_data_f(_datum):
+                return (_datum.pid, pandas.Series({time:predictor(_datum, time) for time in self.times}))
+            raw = parallel_map(_per_data_f, test_data, global_stuff.num_processors)
+            fold_scores.append(pandas.DataFrame({x:y for x,y in raw}))
+            #fold_scores.append(pandas.DataFrame({datum.pid:{time:predictor(datum, time) for time in self.times} for datum in test_data if int(datum.pid)%1==0}))
         return keyed_DataFrame(pandas.concat(fold_scores, axis=1))
 
 
@@ -711,9 +827,11 @@ class plot_predictions_fig_f(possibly_cached):
         self.plotters = plotters
 
     def __call__(self, datum):
+        print datum.pid
         fig = plt.figure()
         ax = fig.add_subplot(1,1,1)
-        fig.suptitle(datum.pid)
+        import string
+
         ax.set_xlabel('time')
         ax.set_ylabel('fxn value')
         for plotter in self.plotters:
@@ -725,7 +843,20 @@ class plot_predictions_fig_f(possibly_cached):
             add_series_to_ax(abc_ys, ax, 'green', 'sim', 'solid', linewidth=3)
         except AttributeError:
             pass
-        ax.legend()
+
+        
+        a,b,c = get_curve_abc(datum.s, datum.ys)
+        """
+        ts = np.linspace(0,50,100)
+        ys = [the_f(t,datum.s,a,b,c) for t in ts]
+        ax.plot(ts, ys, color='black', linestyle='--')
+        """
+        cov_string = string.join(['%.2f' % v for v in datum.xa],sep=' ')
+
+        fig.suptitle('%s %s a:%.2f b:%.2f c:%.2f'% (datum.pid, cov_string, a, b, c))
+
+        #ax.legend()
+        ax.legend(prop={'size':4})
         ax.plot(-1,datum.s,'bo')
         ax.set_xlim(-2,50)
         ax.set_ylim(-0.1, 1.1)
@@ -740,7 +871,7 @@ class plot_all_predictions_fig_f(possibly_cached):
         return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        return '%s/%s' % (global_stuff.data_home, 'prediction_plots')
+        return '%s/%s' % (global_stuff.for_dropbox, 'prediction_plots')
 
     print_handler_f = staticmethod(multiple_figures_to_pdf)
 
@@ -753,19 +884,80 @@ class plot_all_predictions_fig_f(possibly_cached):
         for train_data, test_data in self.cv_f(data):
             plotters = keyed_list()
             for trainer, plotter_cons in self.trainer_plotter_cons_tuples:
-                try:
-                    predictor = trainer(test_data, train_data)
-                except TypeError:
-                    predictor = trainer(test_data)
+                if trainer.normal():
+                    predictor = trainer(train_data)
+                else:
+                    predictor = trainer(train_data, test_data)
                 plotters.append(plotter_cons(predictor))
             prediction_plotter = plot_predictions_fig_f(plotters)
-
-            figs += [prediction_plotter(datum) for datum in test_data if int(datum.pid)%10==0]
-        return figs
+            figs += [[datum.s,prediction_plotter(datum)] for datum in test_data]
+            #figs += [[datum.s,prediction_plotter(datum)] for datum in test_data if int(datum.pid) in [30503,30424,30376,30218,30117,30034]]
+        return [y[1] for y in sorted(figs,key=lambda x:x[0])]
                 
             
+class plot_scalar_prediction_fig(keyed_object):
+
+    def get_introspection_key(self):
+        return 'scalar_pred_fig'
+
+    def __init__(self, plotters):
+        self.plotters = plotters
+
+    def __call__(self, datum):
+        print datum.pid
+        fig = plt.figure()
+        ax = fig.add_subplot(1,1,1)
+        import string
+
+        ax.set_xlabel('time')
+        ax.set_ylabel('fxn value')
+        for plotter in self.plotters:
+            plotter(ax, datum)
+
+        mean_val = np.mean(datum.ys)
+        ax.axvline(mean_val, color = 'black', linewidth=5)
+        for y in datum.ys:
+            ax.axvline(y+random.uniform(-0.05,0.05), color = 'red')
+        return fig
 
 
+class generic_plot_all_predictions_fig_f(possibly_cached):
+
+    def get_introspection_key(self):
+        return '%s_%s_%s' % ('generic_scalar_preds', self.cv_f.get_key(), self.single_fig_plotter.get_key())
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s' % (global_stuff.for_dropbox, 'prediction_plots')
+
+    print_handler_f = staticmethod(multiple_figures_to_pdf)
+
+    def __init__(self, trainer_plotter_cons_tuples, cv_f, single_fig_plotter):
+        self.trainer_plotter_cons_tuples, self.cv_f, self.single_fig_plotter = trainer_plotter_cons_tuples, cv_f, single_fig_plotter
+
+    @save_to_file
+    def __call__(self, data):
+        figs = []
+        for train_data, test_data in self.cv_f(data):
+            plotters = keyed_list()
+            for trainer, plotter_cons in self.trainer_plotter_cons_tuples:
+                if trainer.normal():
+                    predictor = trainer(train_data)
+                else:
+                    predictor = trainer(train_data, test_data)
+                plotters.append(plotter_cons(predictor))
+            prediction_plotter = self.single_fig_plotter(plotters)
+
+            figs = map(prediction_plotter, test_data[0:20])
+            #figs = parallel_map(prediction_plotter, test_data[0:20], global_stuff.num_processors)
+            #figs = parallel_map(prediction_plotter, test_data, global_stuff.num_processors)
+            #figs += [[datum.s,prediction_plotter(datum)] for datum in test_data]
+            #figs += [prediction_plotter(datum) for datum in test_data]
+            #figs += [[datum.s,prediction_plotter(datum)] for datum in test_data if int(datum.pid) in [30503,30424,30376,30218,30117,30034]]
+        return figs
+        return [y[1] for y in sorted(figs,key=lambda x:x[0])]
 
 class cv_fold_f(possibly_cached):
     """
@@ -854,7 +1046,16 @@ class loss_f(keyed_object):
     def __call__(self, _datum, time, score):
         return self.distance_f(self.get_true_val_f(_datum, time), score)
 
+class scaled_loss_f(keyed_object):
 
+    def get_introspection_key(self):
+        return '%s_%s' % ('scaled_loss', self.backing_loss_f.get_key())
+
+    def __init__(self, backing_loss_f):
+        self.backing_loss_f = backing_loss_f
+
+    def __call__(self, _datum, time, score):
+        return self.backing_loss_f(_datum, time, score) / _datum.s
 
 class scaled_logistic_loss_f(keyed_object):
 
@@ -882,7 +1083,7 @@ class signed_loss_f(keyed_object):
         return 'signedloss'
 
     def __call__(self, true_val, pred):
-        return true_val - pred
+        return pred - true_val
 
 class performance_series_f(possibly_cached):
     """
@@ -893,7 +1094,7 @@ class performance_series_f(possibly_cached):
         self.loss_f, self.percentiles, self.data, self.times = loss_f, percentiles, data, times
 
     @key
-    @save_and_memoize
+#    @save_and_memoize
     def __call__(self, scores):
 
         losses_d = {}
@@ -940,36 +1141,38 @@ class model_comparer_f(possibly_cached):
     hard code the loss functions used
     """
 
-    def __init__(self, trainers, cv_f, loss_f, percentiles, times):
+    def __init__(self, trainers, cv_f, loss_f, percentiles, times, display_colors, display_names):
         self.trainers, self.cv_f, self.loss_f, self.percentiles, self.times = trainers, cv_f, loss_f, percentiles, times
+        self.display_colors, self.display_names = display_colors, display_names
 
     @save_to_file
     @memoize
     def __call__(self, data):
         fig = plt.figure()
         ax = fig.add_subplot(1,1,1)
-        ax.set_title(self.loss_f.get_key())
-        for trainer in self.trainers:
+        fig.suptitle('overall loss under %s, n=%d' % (self.loss_f.get_key(), len(data)))
+        for trainer, display_color, display_name in itertools.izip(self.trainers, self.display_colors, self.display_names):
             scores_getter = cross_validated_scores_f(trainer, self.cv_f, self.times)
             scores = scores_getter(data)
             _performance_series_f = performance_series_f(self.loss_f, self.percentiles, data, self.times)
             perfs = _performance_series_f(scores)
-            add_performances_to_ax(ax, perfs, trainer.display_color, trainer.display_name)
+            add_performances_to_ax(ax, perfs, display_color, display_name)
         ax.set_xlim(-1.0,50)
         ax.set_ylim(-0.5,1.1)
-        ax.legend()
-        fig.show()
+        ax.set_xlabel('time')
+        ax.set_ylabel('loss')
+        ax.legend(prop={'size':6})
         return fig
 
     def get_introspection_key(self):
-        return self.trainers[0].get_key()
+        return '%s_%s_%s' % (self.loss_f.get_key(), self.cv_f.get_key(), self.trainers[0].get_key())
         return '%s_%s_%s_%s' % ('bs', self.trainers.get_key(), self.cv_f.get_key(), self.loss_f.get_key())
 
     def key_f(self, data):
         return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        return '%s/%s' % (global_stuff.data_home,'betweenmodel_perfs')
+        return '%s/%s' % (global_stuff.for_dropbox,'betweenmodel_perfs')
 
     print_handler_f = staticmethod(figure_to_pdf)
 
@@ -1072,26 +1275,40 @@ most general: specify (something that generates output, something that plots the
 what 'data' means for this project
 """
 
-class datum(keyed_object):
-
-    def __init__(self, pid, xa, xb, xc, s, ys):
-        self.pid, self.xa, self.xb, self.xc, self.s, self.ys = pid, xa, xb, xc, s, ys
+class datum_base(keyed_object):
 
     def __repr__(self):
         return self.pid
 
     def __eq__(self, other):
-        return self.pid == other.pid
+        if not isinstance(other, datum_base):
+            return False
+        else:
+            return self.pid == other.pid
 
     def __hash__(self):
         return hash(self.pid)
 
+class datum(datum_base):
+
+    def __init__(self, pid, xa, xb, xc, s, ys):
+        self.pid, self.xa, self.xb, self.xc, self.s, self.ys = pid, xa, xb, xc, s, ys
+
+
+
 class simulated_datum(datum):
+
     def __init__(self, pid, xa, xb, xc, s, ys, true_a, true_b, true_c):
         self.true_a, self.true_b, self.true_c = true_a, true_b, true_c
         datum.__init__(self, pid, xa, xb, xc, s, ys)
 
-        
+
+class datum_for_asymptotic(datum_base):
+
+    def __init__(self, pid, x, s, ys):
+        self.pid, self.s, self.x, self.ys = pid, s, x, ys
+
+
 
 
 class data(keyed_list):
@@ -1355,7 +1572,7 @@ class aggregate_curve_f(possibly_cached):
         return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        return '%s/%s' % (global_stuff.data_home, 'aggregate_curves')
+        return '%s/%s' % (global_stuff.for_dropbox, 'aggregate_curves')
 
     print_handler_f = staticmethod(write_Series)
 
@@ -1377,7 +1594,7 @@ class aggregate_shape_f(possibly_cached):
         return '%s_%s' % (self.get_key(), data.get_key())
 
     def location_f(self, data):
-        return '%s/%s' % (global_stuff.data_home, 'aggregate_shapes')
+        return '%s/%s' % (global_stuff.for_dropbox, 'aggregate_shapes')
 
     print_handler_f = staticmethod(write_Series)
 
@@ -1431,14 +1648,14 @@ helpers
 """
 
 def add_performances_to_ax(ax, perfs, color, name):
-    add_series_to_ax(perfs['mean'], ax, color, name, 'dashed')
+    add_series_to_ax(perfs['mean'], ax, color, name, ':')
     percentiles = perfs[[x for x in perfs.columns if x != 'mean']]
     fixed = functools.partial(add_series_to_ax, ax=ax, color=color, label=None, linestyle='solid')
     percentiles.apply(fixed, axis=0)
     return ax
 
 def add_series_to_ax(s, ax, color, label, linestyle, linewidth=1.0):
-    ax.plot(s.index, s, color=color, ls=linestyle, label=label)
+    ax.plot(s.index, s, color=color, ls=linestyle, label=label, alpha=0.8)
 
 def the_f(t, s, a, b, c):
     return s * ( (1.0-a) - (1.0-a)*(b) * math.exp(-1.0*t/c))
@@ -1507,12 +1724,26 @@ def scaled_logistic_loss(x, c):
 
 
 
-def train_logistic_model(X, Y):
+def train_logistic_model(X, Y, offset=0.0):
     """
     each patient is a column.  would like return object to be series whose index matches feature names
     """
+    offset_v = np.ones(X.shape[1]) * offset
     def obj_f(b):
-        error_vect = (X.T.dot(b)).apply(logistic) - Y
+        error_vect = (X.T.dot(b)+offset_v).apply(logistic) - Y
+        return error_vect.dot(error_vect)
+    import scipy.optimize
+
+    ans, f, d = scipy.optimize.fmin_l_bfgs_b(obj_f, np.zeros(X.shape[0]), approx_grad = True)
+    return pandas.Series(ans, index=X.index)
+
+def train_exponential_model(X, Y, offset=0.0):
+    """
+    each patient is a column.  would like return object to be series whose index matches feature names
+    """
+    offset_v = np.ones(X.shape[1]) * offset
+    def obj_f(b):
+        error_vect = (X.T.dot(b)+offset_v).apply(math.exp) - Y
         return error_vect.dot(error_vect)
     import scipy.optimize
 
@@ -1583,17 +1814,20 @@ class pp_roll(object):
     it keeps a list of figures you can access
     """
 
-    def __init__(self, num_rows, num_cols, hspace=0.3, wspace=0.3):
+    def __init__(self, num_rows, num_cols, hspace=0.3, wspace=0.3, title=None):
         self.num_rows, self.num_cols, self.hspace, self.wspace = num_rows, num_cols, hspace, wspace
         self.figure_limit = num_rows * num_cols
+        self.title=title
         self.cur_fig_num = -1
         self.figs = []
         self.start_new_page()
+
 
     def start_new_page(self):
         if self.cur_fig_num != 0:
             self.figs.append(plt.figure())
             self.figs[-1].subplots_adjust(hspace=self.hspace,wspace=self.wspace)
+            self.figs[-1].suptitle(self.title)
             self.cur_fig_num = 0
 
     def get_axes(self):
@@ -1725,9 +1959,12 @@ def merge_posteriors(p1, p2):
     """
     posteriors are just a dictionary.  merge samples using concat
     """
-    p = keyed_dict({})
+    p = type(p1)({})
     for param in p1:
-        p[param] = pandas.concat([p1[param],p2[param]])
+        if isinstance(p1[param], pandas.DataFrame) or isinstance(p1[param], pandas.Series):
+            p[param] = pandas.concat([p1[param],p2[param]])
+        else:
+            p[param] = p1[param]
     return p
 
 class multichain_posterior(keyed_dict):
@@ -1767,7 +2004,7 @@ class gelman_statistic_f(possibly_cached):
         return '%s_%s' % (self.get_key(), posteriors.get_key())
 
     def location_f(self, posteriors):
-        return '%s/%s' % (global_stuff.data_home, 'gelmans')
+        return '%s/%s' % (global_stuff.for_dropbox, 'gelmans')
 
     
     @save_to_file
@@ -1802,3 +2039,118 @@ class gelman_statistic_f(possibly_cached):
         d_new = d.ix[:,important_columns + list(d.columns)]
 
         return pandas.DataFrame.transpose(d_new)
+
+
+def filter_by_max_num(df, n):
+    N = df.shape[0]
+    if n < N:
+        to_use = [int(i*float(N/n)) for i in xrange(n)]
+    else:
+        to_use = range(N)
+    if len(df.shape) == 2:
+        return df.iloc[to_use,:]
+    else:
+        return df.iloc[to_use]
+
+
+def parallel_map(f, iterable, num_processes):
+    """
+    make a 
+    """
+    import multiprocessing
+    results = multiprocessing.Manager().list()
+    iterable_queue = multiprocessing.Queue()
+
+    def worker(_iterable_queue, _f, results_queue):
+        for arg in iter(_iterable_queue.get, None):
+            results_queue.append(_f(arg))
+
+    for x in iterable:
+        iterable_queue.put(x)
+
+    for i in xrange(num_processes):
+        iterable_queue.put(None)
+
+    workers = []
+
+    for i in xrange(num_processes):
+        p = multiprocessing.Process(target=worker, args=(iterable_queue, f, results))
+        p.start()
+        workers.append(p)
+
+    for p in workers:
+        p.join()
+
+    return [x for x in results]
+
+def truncated_normal_pdf(x, mu, sigma, a, b):
+    import scipy.stats
+    a = scipy.stats.norm.pdf(x, mu, sigma)
+    pct = scipy.stats.norm.cdf(0, mu, sigma) + (1.0 - scipy.stats.norm.cdf(1, mu, sigma))
+    return a / pct
+
+def normal_pdf(x, mu, sigma):
+    import scipy.stats
+    return scipy.stats.norm.pdf(x, mu, sigma)
+                                                
+
+
+class shape_plotter(object):
+
+    def __init__(self, predictor, low, high, num):
+        self.predictor = predictor
+        self.low, self.high, self.num = low, high, num
+
+    def __call__(self, ax, _datum, color, label, linestyle = '-', linewidth=17):
+        ts = np.linspace(self.low, self.high, self.num)
+        ys = [self.predictor(_datum, t) / _datum.s for t in ts]
+        ax.plot(ts, ys, color=color, label=label, linestyle=linestyle)
+
+
+
+class discrete_shape_plotter(object):
+
+    def __init__(self, predictor):
+        self.predictor = predictor
+
+    def __call__(self, ax, _datum, color, label, linestyle = ':', marker='.'):
+        ts = global_stuff.times
+        ys = [self.predictor(_datum, t) / _datum.s for t in ts]
+        ax.plot(ts, ys, color=color, label=label, linestyle=linestyle)        
+
+def plot_stuff(plotters, patient_block, color_list, label_list, axis_labels):
+    """
+    takes in predictor, m x n list of patients, m x n list of colors, m x n list of labels, m list of axis labels
+    """
+    m = len(axis_labels)
+
+    figs = []
+
+    for i in xrange(m):
+        
+        fig = plt.figure()
+        ax = fig.add_subplot(1,1,1)
+
+        ax.set_title('patients with ' + axis_labels[i])
+        ax.set_xlabel('time')
+        ax.set_ylabel('scaled fxn value')
+        n = len(patient_block[i])
+
+        for j in xrange(n):
+            first = True
+            for plotter in plotters:
+                if first:
+                    plotter(ax, patient_block[i][j], color_list[j], label_list[j])
+                    first = False
+                else:
+                    plotter(ax, patient_block[i][j], color_list[j], None)
+        ax.legend(prop={'size':5})
+        figs.append(fig)
+
+    return figs
+
+
+"""
+shitty ass code goes below here
+"""
+
