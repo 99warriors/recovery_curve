@@ -574,17 +574,17 @@ class plot_posterior_boxplots(possibly_cached):
         put posteriors into list.  then draw boxplots, and add in true values and labels
         """
         l = [posteriors[param_name] for param_name in self.param_names]
-        ax.boxplot(l)
+        ax.boxplot(l, sym='')
 
         num_params = len(self.param_names)
-        ax.set_xticks(range(num_params))
+        ax.set_xticks(range(1,num_params+1))
         ax.set_xticklabels(self.param_names, rotation='vertical')
         xticks = ax.get_xticklabels()
         for xtick,i in zip(xticks,range(len(xticks))):
             xtick.set_fontsize(10) 
 
         for param_name, i in zip(self.param_names,xrange(num_params)):
-            ax.axhline(y = true_params[param_name], xmin=i, xmax=i+0.5)
+            ax.axhline(y = true_params[param_name], xmin=i/float(num_params), xmax=(i+1)/float(num_params), color = 'green')
 
         return ax
 

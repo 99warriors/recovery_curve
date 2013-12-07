@@ -400,6 +400,75 @@ class get_pystan_diffcovs_posterior_f(possibly_cached_folder):
 
         fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True)
 
+
+        
+        traces = fit.extract(permuted=True)
+
+        posteriors = fixed_phi_m_posterior({})
+        N = len(data)
+        d_A, d_B, d_C = {}, {}, {}
+        num_samples = traces['as'].shape[0]
+        if patient_K < num_samples:
+            to_keep = [int(z*num_samples/patient_K) for z in range(patient_K)]
+        else:
+            to_keep = range(num_samples)
+
+
+        for i in xrange(N):
+            try:
+                d_A[data[i].pid] = pandas.Series(fit.extract()['as'][to_keep,i])
+                d_B[data[i].pid] = pandas.Series(fit.extract()['bs'][to_keep,i])
+                d_C[data[i].pid] = pandas.Series(fit.extract()['cs'][to_keep,i])
+            except:
+                d_A[data[i].pid] = pandas.Series(fit.extract()['as'][to_keep])
+                d_B[data[i].pid] = pandas.Series(fit.extract()['bs'][to_keep])
+                d_C[data[i].pid] = pandas.Series(fit.extract()['cs'][to_keep])
+
+
+
+        posteriors['As'] = pandas.DataFrame(d_A)
+        posteriors['Bs'] = pandas.DataFrame(d_B)
+        posteriors['Cs'] = pandas.DataFrame(d_C)
+
+        
+        # need to convert arrays to dataframes, and give them the same indicies as in data
+
+        try:
+            posteriors['B_a'] = pandas.DataFrame(traces['B_a'][to_keep,i])
+        except:
+            posteriors['B_a'] = pandas.DataFrame(traces['B_a'][to_keep])
+        posteriors['B_a'].columns = _a_datum.xa.index
+        
+        try:
+            posteriors['B_b'] = pandas.DataFrame(traces['B_b'][to_keep,i])
+        except:
+            posteriors['B_b'] = pandas.DataFrame(traces['B_b'][to_keep])
+        posteriors['B_b'].columns = _a_datum.xb.index
+
+        try:
+            posteriors['B_c'] = pandas.DataFrame(traces['B_c'][to_keep,i])
+        except:
+            posteriors['B_c'] = pandas.DataFrame(traces['B_c'][to_keep])
+        posteriors['B_c'].columns = _a_datum.xb.index
+
+
+        posteriors['phi_a'] = pandas.DataFrame(traces['phi_a'])
+        posteriors['phi_a'].columns = ['phi_a']
+        posteriors['phi_b'] = pandas.DataFrame(traces['phi_b'])
+        posteriors['phi_b'].columns = ['phi_b']
+        posteriors['phi_c'] = pandas.DataFrame(traces['phi_c'])
+        posteriors['phi_c'].columns = ['phi_c']
+
+        posteriors['phi_m'] = self.phi_m
+
+        #posteriors['phi_m'] = pandas.DataFrame(traces['phi_m'])
+        #posteriors['phi_m'].columns = ['phi_m']
+
+        return posteriors
+
+
+        """
+
         traces = fit.extract(permuted=True)
         
         # need to convert arrays to dataframes, and give them the same indicies as in data
@@ -437,6 +506,8 @@ class get_pystan_diffcovs_posterior_f(possibly_cached_folder):
         posteriors['Cs'] = pandas.DataFrame(d_C)
 
         return posteriors
+
+        """
 
 class get_pystan_diffcovs_beta_noise_posterior_f(possibly_cached_folder):
     """
@@ -2413,7 +2484,6 @@ class get_pystan_diffcovs_posterior_phi_m_fixed_f(possibly_cached_folder):
         import pystan
 
         d = {}
-
         pops = self.get_pops_f(data)
         d['pop_a'] = pops.pop_a
         d['pop_b'] = pops.pop_b
@@ -2467,7 +2537,7 @@ class get_pystan_diffcovs_posterior_phi_m_fixed_f(possibly_cached_folder):
         else:
             to_keep = range(num_samples)
 
-        pdb.set_trace()
+
         for i in xrange(N):
             try:
                 d_A[data[i].pid] = pandas.Series(fit.extract()['as'][to_keep,i])

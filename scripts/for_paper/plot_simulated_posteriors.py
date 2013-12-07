@@ -25,8 +25,8 @@ meat
 """
 
 def do_stuff(outfiles, sim_times, N1, N2, params, pops, noise_f, seed, gp_partial, num_chains, num_iters, num_processes):
-    #get_posterior_f = gp.parallel_merged_get_posterior_f(gp_partial, num_iters, num_chains, num_processes)
-    get_posterior_f = gp.merged_get_posterior_f(gp_partial, num_iters, num_chains)
+    get_posterior_f = gp.parallel_merged_get_posterior_f(gp_partial, num_iters, num_chains, num_processes)
+    #get_posterior_f = gp.merged_get_posterior_f(gp_partial, num_iters, num_chains)
     id_to_x_s_f = gd.an_id_to_x_s_f(1)
     for outfile, param in zip(outfiles, params):
         
@@ -37,14 +37,14 @@ def do_stuff(outfiles, sim_times, N1, N2, params, pops, noise_f, seed, gp_partia
         pid_iterator = gd.fake_pid_iterator(N)
         sim_data = gd.simulated_get_data_f(param, pops, id_to_x_s_f, sim_times, noise_f, seed)(pid_iterator)
         posteriors = get_posterior_f(sim_data)
-        ps.plot_posterior_boxplots(ax, posteriors, param)
+        ps.plot_posterior_boxplots()(ax, posteriors, param)
 
         ax = fig.add_subplot(2,1,2)
         N = N2
         pid_iterator = gd.fake_pid_iterator(N)
         sim_data = gd.simulated_get_data_f(param, pops, id_to_x_s_f, sim_times, noise_f, seed)(pid_iterator)
         posteriors = get_posterior_f(sim_data)
-        ps.plot_posterior_boxplots(ax, posteriors, param)
+        ps.plot_posterior_boxplots()(ax, posteriors, param)
         
         ps.figure_to_pdf(fig, outfile)
 

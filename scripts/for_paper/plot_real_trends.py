@@ -14,12 +14,19 @@ makes 2 plots, showing trend by age, also controlled for init, and vice versa fo
 outfile_age = options.get_outfile_path('age_trend')
 outfile_init = options.get_outfile_path('init_trend')
 data = options.filtered_data
-predictor = options.read_data_point_predictor
+trainer = options.our_data_point_trainer
 curve_plot_times = np.linspace(0,50,100)
+
+
+options.real_get_posterior_f(data, data)
+
+pdb.set_trace()
 
 """
 meat
 """
+
+predictor = trainer(data, data)
 
 repr_d = {}
 for datum in data:

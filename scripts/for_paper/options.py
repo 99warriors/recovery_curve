@@ -7,7 +7,7 @@ import recovery_curve.getting_data as gd
 import recovery_curve.get_posterior_fs as gp
 import recovery_curve.predictors_and_trainers as pt
 
-home_folder = '/Users/glareprotector/Documents/Dropbox/prostate_figs'
+home_folder = '/home/ubuntu/Dropbox/prostate_figs'
 def get_outfile_path(file):
     return '%s/%s' % (home_folder, file)
 
@@ -57,10 +57,10 @@ sim_param_2 = param = set_hard_coded_key_dec(ps.keyed_dict, 'ABC_n2p1p2_phis_1')
 
 sim_noise_f = gd.normal_noise(sim_phi_m)
 
-sim_hypers = ps.hypers(1.0, 1.0, 1.0, 15.0, 15.0, 15.0, 'doesnt matter')
+sim_hypers = ps.hypers(1.0, 1.0, 1.0, 15.0, 15.0, 15.0, 5.0)
 
-#sim_get_posterior_f_partial = ps.keyed_partial(gp.get_pystan_diffcovs_posterior_f, sim_pops_f, sim_hypers)
-sim_get_posterior_f_partial = ps.keyed_partial(gp.get_pystan_diffcovs_posterior_phi_m_fixed_f, 0.1, sim_pops_f, sim_hypers)
+sim_get_posterior_f_partial = ps.keyed_partial(gp.get_pystan_diffcovs_posterior_f, sim_pops_f, sim_hypers)
+#sim_get_posterior_f_partial = ps.keyed_partial(gp.get_pystan_diffcovs_posterior_phi_m_fixed_f, 0.1, sim_pops_f, sim_hypers)
 
 
 """
@@ -95,15 +95,16 @@ init_titles = ['init 41-', 'init 41 to 60', 'init 60 to 80', 'init 80 to 100']
 """
 real_data_inference
 """
+max_samples = 1000
 real_fixed_phi_m = 0.1
 real_times = sim_times
 real_get_pops_f = ps.train_shape_pops_f()
-real_hypers = sim_hypers
-real_get_posterior_f_partial = ps.keyed_partial(gp.get_pystan_diffcovs_posterior_phi_m_fixed_f, real_fixed_phi_m, real_get_pops_f, real_hypers)
+real_hypers = sim_hypers = ps.hypers(1.0, 1.0, 1.0, 15.0, 15.0, 15.0, 'doesnt matter')
+real_get_posterior_f_partial = ps.keyed_partial(gp.get_pystan_diffcovs_posterior_phi_m_fixed_has_test_f, real_fixed_phi_m, real_get_pops_f, real_hypers)
 real_num_chains = 4
 real_iters = 5000
-real_get_posterior_f = gp.parallel_merged_get_posterior_f(real_get_posterior_f_partial, real_iters, real_num_chains, global_stuff.num_processes)
-our_data_point_trainer = pt.t_point_trainer_from_t_distribution_trainer(pt.t_distribution_trainer_from_abc_distribution_trainer(pt.builtin_auto_abc_distribution_trainer(get_posterior_f)), ps.median_f())
+real_get_posterior_f = gp.parallel_merged_get_posterior_f(real_get_posterior_f_partial, real_iters, real_num_chains, global_stuff.num_processors)
+our_data_point_trainer = pt.t_point_trainer_from_t_distribution_trainer(pt.t_distribution_trainer_from_abc_distribution_trainer(pt.builtin_auto_abc_distribution_trainer(real_get_posterior_f, max_samples)), ps.median_f())
 logreg_trainer = pt.logreg_trainer(real_times)
 avg_shape_trainer = pt.prior_trainer(real_get_pops_f)
 avg_curve_trainer = pt.avg_value_trainer()
@@ -111,5 +112,4 @@ loss_fs = [ps.abs_loss_f(), ps.scaled_logistic_loss_f(10)]
 loss_f_names = ['abs', 'convex f']
 real_performance_cv_f = ps.cv_fold_f(4)
 real_percentiles_to_plot = [0.25, 0.50, 0.75]
-real_analyze_fold = ps.self_test_cv_f(filtered_data, filtered_data)
 patients_to_plot_posterior_curves = [] # this i will hard code in after figuring it out elsewhere
