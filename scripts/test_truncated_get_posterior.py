@@ -16,6 +16,6 @@ num_chains = 1
 seed = 1
 phi_m = 0.1
 
-pdb.set_trace()
-#posteriors = gp.get_pystan_diffcovs_posterior_truncated_phi_m_fixed_has_test_f(phi_m, get_pops_f, hypers, num_steps, num_chains, seed)(data, data)
-posteriors = gp.get_pystan_diffcovs_posterior_phi_m_fixed_has_test_f(phi_m, get_pops_f, hypers, num_steps, num_chains, seed)(data, data)
+
+posteriors = gp.get_pystan_diffcovs_posterior_truncated_phi_m_fixed_has_test_f(phi_m, get_pops_f, hypers, num_steps, num_chains, seed)(data, data)
+#posteriors = gp.get_pystan_diffcovs_posterior_phi_m_fixed_has_test_f(phi_m, get_pops_f, hypers, num_steps, num_chains, seed)(data, data)
