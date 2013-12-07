@@ -1124,7 +1124,7 @@ class get_pystan_diffcovs_posterior_truncated_phi_m_fixed_has_test_f(possibly_ca
 
         init_d['phi_a'], init_d['phi_b'], init_d['phi_c'] = 0.4, 0.4, 0.4
 
-
+        pdb.set_trace()
 
         fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True, init = [init_d for i in xrange(self.chains)], algorithm='HMC')
         print pandas.DataFrame(fit.extract(permuted=True)['B_a'][0:50,:])
@@ -2688,7 +2688,7 @@ class get_pystan_diffcovs_posterior_phi_m_fixed_has_test_f(possibly_cached_folde
         d['vs_test'] = vs_test
         d['L_test'] = len(ts_test)
 
-
+        pdb.set_trace()
 
         fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True)
 
