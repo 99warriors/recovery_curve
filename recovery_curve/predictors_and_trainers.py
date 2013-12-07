@@ -298,6 +298,32 @@ class prior_trainer(keyed_object):
         return prior_predictor(pops)
 
 
+class avg_value_predictor(keyed_object):
+
+    def get_introspection_key(self):
+        return 'avg_val_pred'
+
+    def __init__(self, avg_value):
+        self.avg_value = avg_value
+
+    def __call__(self, datum, t):
+        return self.avg_value[t]
+
+
+class avg_value_trainer(keyed_object):
+
+    def get_introspection_key(self):
+        return 'avg_value_trainer'
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def normal(self):
+        return True
+
+    def __call__(self, data):
+        return avg_value_predictor(ps.aggregate_curve_f()(data)
+
 
 
 class builtin_abc_distribution_predictor(abc_distribution_predictor):

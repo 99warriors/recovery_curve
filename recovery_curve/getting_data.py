@@ -217,6 +217,19 @@ class beta_noise(keyed_object):
     def __call__(self, m):
         return get_rand_beta(m, self.phi)
 
+class normal_noise(keyed_object):
+
+    def get_introspection_key(self):
+        return '%s_%.3f' % ('normalnoise', self.sd)
+
+    def __init__(self, sd):
+        self.sd = sd
+
+    def __call__(self, m):
+        import random
+        return random.normalvariate(m, self.sd)
+
+
 class simulated_get_data_f(possibly_cached):
     """
     re-seed random number generator at every call
