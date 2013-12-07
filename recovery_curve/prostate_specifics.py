@@ -434,6 +434,10 @@ class summary_traces(possibly_cached):
             ax.set_title(phi_param_name)
         all_pp_rolls.append(roll)
         return reduce(lambda x,y:x + y.figs, all_pp_rolls, [])
+
+
+
+
             
 
 class print_diffcovs_posterior_means(possibly_cached):
@@ -556,7 +560,33 @@ class print_diffcovs_posterior_means_effect(possibly_cached):
 
         return figs
 
+class plot_posterior_boxplots(possibly_cached):
+    """
+    assumes that there is only 1 covariate, no bias term
+    takes in axes, returns the same axes
+    """
+    def __init__(self):
+        self.param_names = ['B_a', 'B_b', 'B_c', 'phi_a', 'phi_b', 'phi_c', 'phi_m']
 
+
+    def __call__(self, ax, posteriors, true_params):
+        """
+        put posteriors into list.  then draw boxplots, and add in true values and labels
+        """
+        l = [posteriors[param_name] for param_name in self.param_names]
+        ax.boxplot(l)
+
+        num_params = len(self.param_names)
+        ax.set_xticks(range(num_params))
+        ax.set_xticklabels(self.param_names, rotation='vertical')
+        xticks = ax.get_xticklabels()
+        for xtick,i in zip(xticks,range(len(xticks))):
+            xtick.set_fontsize(10) 
+
+        for param_name, i in zip(self.param_names,xrange(num_params)):
+            ax.axhline(y = true_params[param_name], xmin=i, xmax=i+0.5)
+
+        return ax
 
 
 class plot_diffcovs_posterior_f(possibly_cached):
@@ -2149,6 +2179,12 @@ def plot_stuff(plotters, patient_block, color_list, label_list, axis_labels):
 
     return figs
 
+
+def stratify_dataset(_data, bin_f, num_bins):
+    strats = [[] for x in xrange(num_bins)]
+    for _datum in _data:
+        strats[bin_f(_datum)].append(_datum)
+    return [data(x) for x in strats]
 
 """
 shitty ass code goes below here
