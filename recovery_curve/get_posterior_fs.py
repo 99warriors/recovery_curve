@@ -19,6 +19,13 @@ def get_starting_pos_beta_with_test(train_data, test_data, pops):
     abc_d = {}
     for datum in train_data:
         abc_d[datum.pid] = pandas.Series(get_curve_abc(datum.s, datum.ys),index = ['a','b','c'])
+        a = abc_d[datum.pid]['a']
+        b = abc_d[datum.pid]['b']
+        c = abc_d[datum.pid]['c']
+        abc_d[datum.pid]['a'] = max(min(0.95,a),0.05)
+        abc_d[datum.pid]['b'] = max(min(0.95,b),0.05)
+        abc_d[datum.pid]['c'] = max(min(5,c),0.05)
+
     abc_df = pandas.DataFrame(abc_d).T
 
     # get B's
@@ -50,6 +57,56 @@ def get_starting_pos_beta_with_test(train_data, test_data, pops):
     d['as_test'] = [0.5 for i in xrange(len(test_data))]
     d['bs_test'] = [0.5 for i in xrange(len(test_data))] 
     d['cs_test'] = [2.0 for i in xrange(len(test_data))] 
+
+    #pdb.set_trace()
+
+    return d
+
+def get_starting_pos_beta(train_data, pops):
+
+    # get abc for every patient from curve fitting, put into matrix
+
+    abc_d = {}
+    for datum in train_data:
+        abc_d[datum.pid] = pandas.Series(get_curve_abc(datum.s, datum.ys),index = ['a','b','c'])
+        a = abc_d[datum.pid]['a']
+        b = abc_d[datum.pid]['b']
+        c = abc_d[datum.pid]['c']
+        abc_d[datum.pid]['a'] = max(min(0.95,a),0.05)
+        abc_d[datum.pid]['b'] = max(min(0.95,b),0.05)
+        abc_d[datum.pid]['c'] = max(min(5,c),0.05)
+
+    abc_df = pandas.DataFrame(abc_d).T
+
+    # get B's
+    X_a = pandas.DataFrame({datum.pid:datum.xa for datum in train_data})
+    B_a = train_logistic_model(X_a, abc_df['a'], logit(pops.pop_a))
+    X_b = pandas.DataFrame({datum.pid:datum.xb for datum in train_data})
+    B_b = train_logistic_model(X_b, abc_df['b'], logit(pops.pop_b))
+    X_c = pandas.DataFrame({datum.pid:datum.xc for datum in train_data})
+    B_c = train_logistic_model(X_c, abc_df['c'], math.exp(pops.pop_c))
+
+    # store the values
+    d = {}
+    
+    d['B_a'] = B_a
+    d['B_b'] = B_b
+    d['B_c'] = B_c
+    """
+    d['as'] = abc_df['a']
+    d['bs'] = abc_df['b']
+    d['cs'] = abc_df['c']
+    d['as_test'] = [g_a(pops.pop_a, datum.xa, B_a) for datum in test_data]
+    d['bs_test'] = [g_b(pops.pop_b, datum.xb, B_b) for datum in test_data]
+    d['cs_test'] = [g_c(pops.pop_c, datum.xc, B_c) for datum in test_data]
+    """
+
+    d['as'] = [0.5 for i in xrange(len(train_data))]
+    d['bs'] = [0.5 for i in xrange(len(train_data))]
+    d['cs'] = [2.0 for i in xrange(len(train_data))]
+    #d['as_test'] = [0.5 for i in xrange(len(test_data))]
+    #d['bs_test'] = [0.5 for i in xrange(len(test_data))] 
+    #d['cs_test'] = [2.0 for i in xrange(len(test_data))] 
 
     #pdb.set_trace()
 
@@ -264,12 +321,15 @@ class parallel_merged_get_posterior_f(possibly_cached):
         import multiprocessing
 
         get_posterior_f_queue = multiprocessing.Queue()
+        #pdb.set_trace()
         for seed in xrange(self.chains):
-            get_posterior_f_queue.put(self.get_posterior_f_cons_partial(iters=self.iters, chains=1, seed=seed))
+            get_posterior_f_queue.put(self.get_posterior_f_cons_partial(iters=self.iters, chains=1, seed=seed), True, 2)
 
         for z in xrange(self.num_processes):
             get_posterior_f_queue.put(None)
 
+        import time
+        time.sleep(5)
         posteriors = multiprocessing.Manager().list()
 
         def worker(_get_posterior_f_queue, _posteriors, _args):
@@ -277,11 +337,13 @@ class parallel_merged_get_posterior_f(possibly_cached):
                 #print _get_posterior_f
                 #print _get_posterior_f.get_key()
                 #print _args
-                print 'worker'
+                print 'worker8888888888888888888888888888888888888888888888888'
+                if _get_posterior_f == None:
+                    print 'LOLOLOL'
                 _posteriors.append(_get_posterior_f(*_args))
 
+        #pdb.set_trace()
 
-        #print __args, 'ggggg'
         #for x in iter(get_posterior_f_queue.get, None):
         #    print 'zz', x
         #pdb.set_trace()
@@ -290,7 +352,8 @@ class parallel_merged_get_posterior_f(possibly_cached):
             p = multiprocessing.Process(target=worker, args=(get_posterior_f_queue, posteriors, __args))
             p.start()
             workers.append(p)
-
+            
+        print 'WAITWAITDONTTELLME'
         for p in workers:
             p.join()
 
@@ -413,16 +476,17 @@ class get_pystan_diffcovs_posterior_f(possibly_cached_folder):
         else:
             to_keep = range(num_samples)
 
+        the_traces = fit.extract()
 
         for i in xrange(N):
             try:
-                d_A[data[i].pid] = pandas.Series(fit.extract()['as'][to_keep,i])
-                d_B[data[i].pid] = pandas.Series(fit.extract()['bs'][to_keep,i])
-                d_C[data[i].pid] = pandas.Series(fit.extract()['cs'][to_keep,i])
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep,i])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep,i])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep,i])
             except:
-                d_A[data[i].pid] = pandas.Series(fit.extract()['as'][to_keep])
-                d_B[data[i].pid] = pandas.Series(fit.extract()['bs'][to_keep])
-                d_C[data[i].pid] = pandas.Series(fit.extract()['cs'][to_keep])
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep])
 
 
 
@@ -459,10 +523,10 @@ class get_pystan_diffcovs_posterior_f(possibly_cached_folder):
         posteriors['phi_c'] = pandas.DataFrame(traces['phi_c'])
         posteriors['phi_c'].columns = ['phi_c']
 
-        posteriors['phi_m'] = self.phi_m
+        #posteriors['phi_m'] = self.phi_m
 
-        #posteriors['phi_m'] = pandas.DataFrame(traces['phi_m'])
-        #posteriors['phi_m'].columns = ['phi_m']
+        posteriors['phi_m'] = pandas.DataFrame(traces['phi_m'])
+        posteriors['phi_m'].columns = ['phi_m']
 
         return posteriors
 
@@ -509,6 +573,333 @@ class get_pystan_diffcovs_posterior_f(possibly_cached_folder):
 
         """
 
+class get_pystan_diffcovs_posterior_beta_noise_mean_f(possibly_cached_folder):
+    """
+    returns posteriors for diffcovs model, using pystan instead of rstan
+    """
+    
+    def get_introspection_key(self):
+        return '%s_%s_%s_%d_%d_%d' % ('pydiffcovs_betamean', self.get_pops_f.get_key(), self.hypers.get_key(), self.iters, self.chains, self.seed)
+        
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s/%s' % (data.get_location(), 'pytrained_diffcovs', self.get_pops_f.get_key())
+
+    print_handler_f = staticmethod(folder_adapter(write_posterior_traces))
+
+    read_f = staticmethod(read_posterior_traces)
+
+    def has_file_content(self, data):
+        return os.path.exists('%s/%s' % (self.full_file_path_f(data), 'out_B_a.csv'))
+
+    def __init__(self, get_pops_f, hypers, iters, chains, seed):
+        self.get_pops_f, self.hypers, self.iters, self.chains, self.seed = get_pops_f, hypers, iters, chains, seed
+        self.diffcovs_model_file = '%s/%s/%s' % (global_stuff.home, 'recovery_curve/stan_files', 'full_model_diffcovs_beta_noise_mean.stan')
+
+    pickle_lock = multiprocessing.Lock()
+    extract_lock = multiprocessing.Lock()
+
+    #@save_and_memoize
+    @key
+    #@read_from_pickle
+    #@save_to_file
+    @save_to_pickle
+    def __call__(self, data):
+        """
+        need to convert data to proper form.  also need to convert to my form, which is a dictionary of dataframes, where keys are the original function objects
+        """
+        import pystan
+
+        d = {}
+
+        """
+        setting hyperparameters
+        """
+
+        pops = self.get_pops_f(data)
+        d['pop_a'] = pops.pop_a
+        d['pop_b'] = pops.pop_b
+        d['pop_c'] = pops.pop_c
+
+        d['c_a'] = self.hypers.c_a
+        d['c_b'] = self.hypers.c_b
+        d['c_c'] = self.hypers.c_c
+        d['l_a'] = self.hypers.l_a
+        d['l_b'] = self.hypers.l_b
+        d['l_c'] = self.hypers.l_c
+        d['l_m'] = self.hypers.l_m
+
+        d['N'] = len(data)
+        _a_datum = iter(data).next()
+        d['K_A'] = len(_a_datum.xa)
+        d['K_B'] = len(_a_datum.xb)
+        d['K_C'] = len(_a_datum.xc)
+
+        xas = pandas.DataFrame({a_datum.pid:a_datum.xa for a_datum in data})
+        xbs = pandas.DataFrame({a_datum.pid:a_datum.xb for a_datum in data})
+        xcs = pandas.DataFrame({a_datum.pid:a_datum.xc for a_datum in data})
+        d['xas'] = xas.T.as_matrix()
+        d['xbs'] = xbs.T.as_matrix()
+        d['xcs'] = xcs.T.as_matrix()
+
+        d['ss'] = [a_datum.s for a_datum in data]
+
+        ls = reduce(lambda x, a_datum: x + [len(a_datum.ys)], data, [])
+        ts = reduce(lambda x, a_datum: x + a_datum.ys.index.tolist(), data, [])
+        vs = reduce(lambda x, a_datum: x + a_datum.ys.tolist(), data, [])
+        d['ls'] = ls
+        d['ts'] = ts
+        d['vs'] = vs
+        d['L'] = len(ts)
+        assert len(ts) == sum(ls)
+
+        init_d = get_starting_pos_beta(data, pops)
+
+        init_d['phi_a'], init_d['phi_b'], init_d['phi_c'], init_d['phi_m'] = 0.4, 0.4, 0.4, 0.01
+
+        fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True, init=[init_d for i in xrange(self.chains)])
+
+        #fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True)
+
+
+        
+        traces = fit.extract(permuted=True)
+
+        posteriors = fixed_phi_m_posterior({})
+        N = len(data)
+        d_A, d_B, d_C = {}, {}, {}
+        num_samples = traces['as'].shape[0]
+        if patient_K < num_samples:
+            to_keep = [int(z*num_samples/patient_K) for z in range(patient_K)]
+        else:
+            to_keep = range(num_samples)
+
+        the_traces = fit.extract()
+
+        for i in xrange(N):
+            try:
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep,i])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep,i])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep,i])
+            except:
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep])
+
+
+
+        posteriors['As'] = pandas.DataFrame(d_A)
+        posteriors['Bs'] = pandas.DataFrame(d_B)
+        posteriors['Cs'] = pandas.DataFrame(d_C)
+
+        
+        # need to convert arrays to dataframes, and give them the same indicies as in data
+
+        try:
+            posteriors['B_a'] = pandas.DataFrame(traces['B_a'][to_keep,i])
+        except:
+            posteriors['B_a'] = pandas.DataFrame(traces['B_a'][to_keep])
+        posteriors['B_a'].columns = _a_datum.xa.index
+        
+        try:
+            posteriors['B_b'] = pandas.DataFrame(traces['B_b'][to_keep,i])
+        except:
+            posteriors['B_b'] = pandas.DataFrame(traces['B_b'][to_keep])
+        posteriors['B_b'].columns = _a_datum.xb.index
+
+        try:
+            posteriors['B_c'] = pandas.DataFrame(traces['B_c'][to_keep,i])
+        except:
+            posteriors['B_c'] = pandas.DataFrame(traces['B_c'][to_keep])
+        posteriors['B_c'].columns = _a_datum.xb.index
+
+
+        posteriors['phi_a'] = pandas.DataFrame(traces['phi_a'])
+        posteriors['phi_a'].columns = ['phi_a']
+        posteriors['phi_b'] = pandas.DataFrame(traces['phi_b'])
+        posteriors['phi_b'].columns = ['phi_b']
+        posteriors['phi_c'] = pandas.DataFrame(traces['phi_c'])
+        posteriors['phi_c'].columns = ['phi_c']
+
+        #posteriors['phi_m'] = self.phi_m
+
+        posteriors['phi_m'] = pandas.DataFrame(traces['phi_m'])
+        posteriors['phi_m'].columns = ['phi_m']
+
+        return posteriors
+
+class get_pystan_diffcovs_posterior_beta_mixture_f(possibly_cached_folder):
+    """
+    returns posteriors for diffcovs model, using pystan instead of rstan
+    """
+    
+    def get_introspection_key(self):
+        return '%s_%s_%s_%d_%d_%d' % ('pydiffcovsbetamix', self.get_pops_f.get_key(), self.hypers.get_key(), self.iters, self.chains, self.seed)
+        
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s/%s' % (data.get_location(), 'pytrained_diffcovs', self.get_pops_f.get_key())
+
+    print_handler_f = staticmethod(folder_adapter(write_posterior_traces))
+
+    read_f = staticmethod(read_posterior_traces)
+
+    def has_file_content(self, data):
+        return os.path.exists('%s/%s' % (self.full_file_path_f(data), 'out_B_a.csv'))
+
+    def __init__(self, get_pops_f, hypers, iters, chains, seed):
+        self.get_pops_f, self.hypers, self.iters, self.chains, self.seed = get_pops_f, hypers, iters, chains, seed
+        self.diffcovs_model_file = '%s/%s/%s' % (global_stuff.home, 'recovery_curve/stan_files', 'full_model_diffcovs_beta_mixture.stan')
+
+    pickle_lock = multiprocessing.Lock()
+    extract_lock = multiprocessing.Lock()
+
+    #@save_and_memoize
+    @key
+    @read_from_pickle
+    #@save_to_file
+    @save_to_pickle
+    def __call__(self, data):
+        """
+        need to convert data to proper form.  also need to convert to my form, which is a dictionary of dataframes, where keys are the original function objects
+        """
+        import pystan
+
+        d = {}
+
+        """
+        setting hyperparameters
+        """
+
+        pops = self.get_pops_f(data)
+        d['pop_a'] = pops.pop_a
+        d['pop_b'] = pops.pop_b
+        d['pop_c'] = pops.pop_c
+
+        d['c_a'] = self.hypers.c_a
+        d['c_b'] = self.hypers.c_b
+        d['c_c'] = self.hypers.c_c
+        d['l_a'] = self.hypers.l_a
+        d['l_b'] = self.hypers.l_b
+        d['l_c'] = self.hypers.l_c
+        d['l_m'] = self.hypers.l_m
+
+        d['N'] = len(data)
+        _a_datum = iter(data).next()
+        d['K_A'] = len(_a_datum.xa)
+        d['K_B'] = len(_a_datum.xb)
+        d['K_C'] = len(_a_datum.xc)
+
+        xas = pandas.DataFrame({a_datum.pid:a_datum.xa for a_datum in data})
+        xbs = pandas.DataFrame({a_datum.pid:a_datum.xb for a_datum in data})
+        xcs = pandas.DataFrame({a_datum.pid:a_datum.xc for a_datum in data})
+        d['xas'] = xas.T.as_matrix()
+        d['xbs'] = xbs.T.as_matrix()
+        d['xcs'] = xcs.T.as_matrix()
+
+        d['ss'] = [a_datum.s for a_datum in data]
+
+
+
+        ls = reduce(lambda x, a_datum: x + [len(a_datum.ys)], data, [])
+        ts = reduce(lambda x, a_datum: x + a_datum.ys.index.tolist(), data, [])
+        vs = reduce(lambda x, a_datum: x + a_datum.ys.tolist(), data, [])
+        d['ls'] = ls
+        d['ts'] = ts
+        d['vs'] = vs
+        d['L'] = len(ts)
+        assert len(ts) == sum(ls)
+
+        init_d = get_starting_pos_beta(data, pops)
+
+        init_d['phi_a'], init_d['phi_b'], init_d['phi_c'], init_d['phi_m'] = 0.4, 0.4, 0.4, 0.01
+
+        init_d['pi'] = 0.5
+        init_d['R'] = 0.5
+
+        fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True, init=[init_d for i in xrange(self.chains)])
+
+        #fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True)
+
+
+        
+        traces = fit.extract(permuted=True)
+
+        posteriors = fixed_phi_m_posterior({})
+        N = len(data)
+        d_A, d_B, d_C = {}, {}, {}
+        num_samples = traces['as'].shape[0]
+        if patient_K < num_samples:
+            to_keep = [int(z*num_samples/patient_K) for z in range(patient_K)]
+        else:
+            to_keep = range(num_samples)
+
+        the_traces = fit.extract()
+
+        for i in xrange(N):
+            try:
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep,i])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep,i])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep,i])
+            except:
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep])
+
+
+
+        posteriors['As'] = pandas.DataFrame(d_A)
+        posteriors['Bs'] = pandas.DataFrame(d_B)
+        posteriors['Cs'] = pandas.DataFrame(d_C)
+
+        
+        # need to convert arrays to dataframes, and give them the same indicies as in data
+
+        try:
+            posteriors['B_a'] = pandas.DataFrame(traces['B_a'][to_keep,i])
+        except:
+            posteriors['B_a'] = pandas.DataFrame(traces['B_a'][to_keep])
+        posteriors['B_a'].columns = _a_datum.xa.index
+        
+        try:
+            posteriors['B_b'] = pandas.DataFrame(traces['B_b'][to_keep,i])
+        except:
+            posteriors['B_b'] = pandas.DataFrame(traces['B_b'][to_keep])
+        posteriors['B_b'].columns = _a_datum.xb.index
+
+        try:
+            posteriors['B_c'] = pandas.DataFrame(traces['B_c'][to_keep,i])
+        except:
+            posteriors['B_c'] = pandas.DataFrame(traces['B_c'][to_keep])
+        posteriors['B_c'].columns = _a_datum.xb.index
+
+
+        posteriors['phi_a'] = pandas.DataFrame(traces['phi_a'])
+        posteriors['phi_a'].columns = ['phi_a']
+        posteriors['phi_b'] = pandas.DataFrame(traces['phi_b'])
+        posteriors['phi_b'].columns = ['phi_b']
+        posteriors['phi_c'] = pandas.DataFrame(traces['phi_c'])
+        posteriors['phi_c'].columns = ['phi_c']
+
+        #posteriors['phi_m'] = self.phi_m
+
+        posteriors['phi_m'] = pandas.DataFrame(traces['phi_m'])
+        posteriors['phi_m'].columns = ['phi_m']
+
+        posteriors['pi'] = pandas.DataFrame(traces['pi'])
+        posteriors['pi'].columns = ['pi']
+
+        posteriors['R'] = pandas.DataFrame(traces['R'])
+        posteriors['R'].columns = ['R']
+
+        return posteriors
+
+
+
 class get_pystan_diffcovs_beta_noise_posterior_f(possibly_cached_folder):
     """
     returns posteriors for diffcovs model, using pystan instead of rstan
@@ -539,7 +930,7 @@ class get_pystan_diffcovs_beta_noise_posterior_f(possibly_cached_folder):
 
     #@save_and_memoize
     @key
-#    @read_from_pickle
+    @read_from_pickle
     #@save_to_file
     @save_to_pickle
     def __call__(self, data):
@@ -758,6 +1149,150 @@ class get_pystan_curve_fit_beta_noise_nonshared_posterior_f(possibly_cached_fold
         posteriors['Bs'] = pandas.DataFrame(d_B)
         posteriors['Cs'] = pandas.DataFrame(d_C)
         posteriors['phi_ms'] = pandas.DataFrame(d_phi_m)
+        
+        print '\t\t\t\t\tfinish'
+        import sys
+        sys.stdout.flush()
+
+        
+
+
+
+
+        return posteriors
+
+class get_pystan_curve_fit_beta_noise_fixed_posterior_f(possibly_cached_folder):
+    """
+    returns posteriors for diffcovs model, using pystan instead of rstan
+    """
+    
+    def get_introspection_key(self):
+        return '%s_%.2f_%d_%d_%d' % ('pydiffcovs_curve_fit_betanoise_fixed', self.phi_m, self.iters, self.chains, self.seed)
+        
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s' % (data.get_location(), 'pytrained_diffcovs')
+
+    print_handler_f = staticmethod(folder_adapter(write_posterior_traces))
+
+    read_f = staticmethod(read_posterior_traces)
+
+#    def has_file_content(self, data):
+#        return os.path.exists('%s/%s' % (self.full_file_path_f(data), 'out_B_a.csv'))
+
+    def __init__(self, phi_m, cs_l, iters, chains, seed):
+        self.phi_m, self.cs_l, self.iters, self.chains, self.seed = phi_m, cs_l, iters, chains, seed
+        self.diffcovs_model_file = '%s/%s/%s' % (global_stuff.home, 'recovery_curve/stan_files', 'curve_fit_beta_noise_fixed.stan')
+
+    pickle_lock = multiprocessing.Lock()
+    extract_lock = multiprocessing.Lock()
+
+    #@save_and_memoize
+    @key
+#    @read_from_pickle
+    #@save_to_file
+    @save_to_pickle
+    def __call__(self, data):
+        """
+        need to convert data to proper form.  also need to convert to my form, which is a dictionary of dataframes, where keys are the original function objects
+        """
+
+
+        import pystan
+
+        d = {}
+
+        """
+        setting hyperparameters
+        """
+
+        d['phi_m'] = self.phi_m
+        d['cs_l'] = self.cs_l
+        d['N'] = len(data)
+
+        d['ss'] = [a_datum.s for a_datum in data]
+
+        ls = reduce(lambda x, a_datum: x + [len(a_datum.ys)], data, [])
+        ts = reduce(lambda x, a_datum: x + a_datum.ys.index.tolist(), data, [])
+        vs = reduce(lambda x, a_datum: x + a_datum.ys.tolist(), data, [])
+        d['ls'] = ls
+        d['ts'] = ts
+        d['vs'] = vs
+        d['L'] = len(ts)
+        assert len(ts) == sum(ls)
+
+        abc_d = {}
+        for _datum in data:
+            abc_d[_datum.pid] = pandas.Series(get_curve_abc(_datum.s, _datum.ys), index=['a','b','c'])
+            a = abc_d[_datum.pid]['a']
+            b = abc_d[_datum.pid]['b']
+            c = abc_d[_datum.pid]['c']
+            abc_d[_datum.pid]['a'] = max(min(0.99, a), 0.01)
+            abc_d[_datum.pid]['b'] = max(min(0.99, b), 0.01)
+            abc_d[_datum.pid]['a'] = max(min(100, a), 0.01)
+
+        abc_df = pandas.DataFrame(abc_d)
+
+        def scale(x,c):
+            return x + c
+            return x  / (x+c)
+
+        def correct(x):
+            return max(min(x,0.9),0.1)
+
+        init_d = {}
+        init_d['as'] = abc_df.loc['a',:]
+        init_d['bs'] = abc_df.loc['b',:]
+        init_d['cs'] = abc_df.loc['c',:]
+                                             
+        print init_d
+
+        fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True, init=[init_d for i in xrange(self.chains)])
+        #fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True)
+
+        print '\t\t\t\t\tstart'
+        import sys
+        sys.stdout.flush()
+
+
+        traces = fit.extract(permuted=True)
+        
+
+
+        # need to convert arrays to dataframes, and give them the same indicies as in data
+        
+        posteriors = fixed_phi_m_posterior({})
+
+        #posteriors['phi_m'] = pandas.DataFrame(traces['phi_m'])
+        #posteriors['phi_m'].columns = ['phi_m']
+        posteriors['phi_m'] = self.phi_m
+
+        # also extract the A_i,B_i,C_i parameters
+        N = len(data)
+        d_A, d_B, d_C, d_phi_m = {}, {}, {}, {}
+        num_samples = traces['as'].shape[0]
+        if patient_K < num_samples:
+            to_keep = [int(z*num_samples/patient_K) for z in range(patient_K)]
+        else:
+            to_keep = range(num_samples)
+        the_traces = fit.extract()
+        for i in xrange(N):
+            print 'gg', i
+            try:
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep,i])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep,i])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep,i])
+            except:
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep])
+#d_phi_m[data[i].pid] = pandas.Series(fit.extract()['phi_m'][to_keep,i])
+        posteriors['As'] = pandas.DataFrame(d_A)
+        posteriors['Bs'] = pandas.DataFrame(d_B)
+        posteriors['Cs'] = pandas.DataFrame(d_C)
+        #posteriors['phi_ms'] = pandas.DataFrame(d_phi_m)
         
         print '\t\t\t\t\tfinish'
         import sys
@@ -1041,7 +1576,7 @@ class get_pystan_diffcovs_posterior_truncated_phi_m_fixed_has_test_f(possibly_ca
 
     #@save_and_memoize
     @key
-#    @read_from_pickle
+    @read_from_pickle
 #    @save_to_file
     @save_to_pickle
     def __call__(self, data, test_data):
@@ -1124,10 +1659,9 @@ class get_pystan_diffcovs_posterior_truncated_phi_m_fixed_has_test_f(possibly_ca
 
         init_d['phi_a'], init_d['phi_b'], init_d['phi_c'] = 0.4, 0.4, 0.4
 
-        pdb.set_trace()
 
-        fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True, init = [init_d for i in xrange(self.chains)], algorithm='HMC')
-        print pandas.DataFrame(fit.extract(permuted=True)['B_a'][0:50,:])
+        fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True, init = [init_d for i in xrange(self.chains)])
+
         traces = fit.extract(permuted=True)
 
         posteriors = fixed_phi_m_posterior({})
@@ -1139,30 +1673,31 @@ class get_pystan_diffcovs_posterior_truncated_phi_m_fixed_has_test_f(possibly_ca
             to_keep = [int(z*num_samples/patient_K) for z in range(patient_K)]
         else:
             to_keep = range(num_samples)
-
+        
+        the_traces = fit.extract()
 
         for i in xrange(N):
             try:
-                d_A[data[i].pid] = pandas.Series(fit.extract()['as'][to_keep,i])
-                d_B[data[i].pid] = pandas.Series(fit.extract()['bs'][to_keep,i])
-                d_C[data[i].pid] = pandas.Series(fit.extract()['cs'][to_keep,i])
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep,i])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep,i])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep,i])
             except:
-                d_A[data[i].pid] = pandas.Series(fit.extract()['as'][to_keep])
-                d_B[data[i].pid] = pandas.Series(fit.extract()['bs'][to_keep])
-                d_C[data[i].pid] = pandas.Series(fit.extract()['cs'][to_keep])
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep])
 
 
         N_test = len(test_data)
 
         for i in xrange(N_test):
             try:
-                d_A_test[test_data[i].pid] = pandas.Series(fit.extract()['as_test'][to_keep,i])
-                d_B_test[test_data[i].pid] = pandas.Series(fit.extract()['bs_test'][to_keep,i])
-                d_C_test[test_data[i].pid] = pandas.Series(fit.extract()['cs_test'][to_keep,i])
+                d_A_test[test_data[i].pid] = pandas.Series(the_traces['as_test'][to_keep,i])
+                d_B_test[test_data[i].pid] = pandas.Series(the_traces['bs_test'][to_keep,i])
+                d_C_test[test_data[i].pid] = pandas.Series(the_traces['cs_test'][to_keep,i])
             except:
-                d_A_test[test_data[i].pid] = pandas.Series(fit.extract()['as_test'][to_keep])
-                d_B_test[test_data[i].pid] = pandas.Series(fit.extract()['bs_test'][to_keep])
-                d_C_test[test_data[i].pid] = pandas.Series(fit.extract()['cs_test'][to_keep])
+                d_A_test[test_data[i].pid] = pandas.Series(the_traces['as_test'][to_keep])
+                d_B_test[test_data[i].pid] = pandas.Series(the_traces['bs_test'][to_keep])
+                d_C_test[test_data[i].pid] = pandas.Series(the_traces['cs_test'][to_keep])
 
         posteriors['As'] = pandas.DataFrame(d_A)
         posteriors['Bs'] = pandas.DataFrame(d_B)
@@ -1207,6 +1742,9 @@ class get_pystan_diffcovs_posterior_truncated_phi_m_fixed_has_test_f(possibly_ca
         #posteriors['phi_m'].columns = ['phi_m']
 
         return posteriors
+
+
+
 
 
 class get_pystan_curve_fit_normal_noise_fixed_as_fixed_posterior_f(possibly_cached_folder):
@@ -2267,6 +2805,632 @@ class get_pystan_diffcovs_beta_noise_with_test_posterior_f(possibly_cached_folde
 
         return posteriors
 
+class get_pystan_diffcovs_posterior_beta_phi_m_fixed_has_test_f(possibly_cached_folder):
+    """
+    returns posteriors for diffcovs model, using pystan instead of rstan
+    """
+    
+    def get_introspection_key(self):
+        if self.phi_m > 0.0099:
+            return '%s_%s_%s_%d_%d_%d_%.2f' % ('pydiffcovs_beta_phimfixed_has_test', self.get_pops_f.get_key(), self.hypers.get_key(), self.iters, self.chains, self.seed, self.phi_m)
+        else:
+            return '%s_%s_%s_%d_%d_%d_%.7f' % ('pydiffcovs_beta_phimfixed_has_test', self.get_pops_f.get_key(), self.hypers.get_key(), self.iters, self.chains, self.seed, self.phi_m)
+        
+    def key_f(self, data, test_data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data, test_data):
+        #print data, test_data
+        return '%s/%s/%s' % (data.get_location(), 'pytrained_diffcovs', self.get_pops_f.get_key())
+
+    print_handler_f = staticmethod(folder_adapter(write_posterior_traces))
+
+    read_f = staticmethod(read_posterior_traces)
+
+    def has_file_content(self, data):
+        return os.path.exists('%s/%s' % (self.full_file_path_f(data), 'out_B_a.csv'))
+
+    def __init__(self, phi_m, get_pops_f, hypers, iters, chains, seed):
+        self.get_pops_f, self.hypers, self.iters, self.chains, self.seed = get_pops_f, hypers, iters, chains, seed
+        self.phi_m = phi_m
+        self.diffcovs_model_file = '%s/%s/%s' % (global_stuff.home, 'recovery_curve/stan_files', 'full_model_diffcovs_beta_noise_fixed_has_test.stan')
+
+    #@save_and_memoize
+    @key
+    @read_from_pickle
+#    @save_to_file
+    @save_to_pickle
+    def __call__(self, data, test_data):
+        """
+        need to convert data to proper form.  also need to convert to my form, which is a dictionary of dataframes, where keys are the original function objects
+        """
+        import pystan
+
+        d = {}
+
+        pops = self.get_pops_f(data)
+        d['pop_a'] = pops.pop_a
+        d['pop_b'] = pops.pop_b
+        d['pop_c'] = pops.pop_c
+
+        d['c_a'] = self.hypers.c_a
+        d['c_b'] = self.hypers.c_b
+        d['c_c'] = self.hypers.c_c
+        d['l_a'] = self.hypers.l_a
+        d['l_b'] = self.hypers.l_b
+        d['l_c'] = self.hypers.l_c
+        #d['l_m'] = self.hypers.l_m
+
+        d['N'] = len(data)
+        _a_datum = iter(data).next()
+        d['K_A'] = len(_a_datum.xa)
+        d['K_B'] = len(_a_datum.xb)
+        d['K_C'] = len(_a_datum.xc)
+
+        xas = pandas.DataFrame({a_datum.pid:a_datum.xa for a_datum in data})
+        xbs = pandas.DataFrame({a_datum.pid:a_datum.xb for a_datum in data})
+        xcs = pandas.DataFrame({a_datum.pid:a_datum.xc for a_datum in data})
+        d['xas'] = xas.T.as_matrix()
+        d['xbs'] = xbs.T.as_matrix()
+        d['xcs'] = xcs.T.as_matrix()
+
+        d['ss'] = [a_datum.s for a_datum in data]
+
+        ls = reduce(lambda x, a_datum: x + [len(a_datum.ys)], data, [])
+        ts = reduce(lambda x, a_datum: x + a_datum.ys.index.tolist(), data, [])
+        vs = reduce(lambda x, a_datum: x + a_datum.ys.tolist(), data, [])
+        d['ls'] = ls
+        d['ts'] = ts
+        d['vs'] = vs
+        d['L'] = len(ts)
+        d['phi_m'] = self.phi_m
+        assert len(ts) == sum(ls)
+
+
+        d['N_test'] = len(test_data)
+
+        xas_test = pandas.DataFrame({a_datum.pid:a_datum.xa for a_datum in test_data})
+        xbs_test = pandas.DataFrame({a_datum.pid:a_datum.xb for a_datum in test_data})
+        xcs_test = pandas.DataFrame({a_datum.pid:a_datum.xc for a_datum in test_data})
+        d['xas_test'] = xas_test.T.as_matrix()
+        d['xbs_test'] = xbs_test.T.as_matrix()
+        d['xcs_test'] = xcs_test.T.as_matrix()
+
+        d['ss_test'] = [a_datum.s for a_datum in test_data]
+
+
+        ls_test = reduce(lambda x, a_datum: x + [len(a_datum.ys)], test_data, [])
+        ts_test = reduce(lambda x, a_datum: x + a_datum.ys.index.tolist(), test_data, [])
+        vs_test = reduce(lambda x, a_datum: x + a_datum.ys.tolist(), test_data, [])
+        d['ls_test'] = ls_test
+        d['ts_test'] = ts_test
+        d['vs_test'] = vs_test
+        d['L_test'] = len(ts_test)
+
+        
+        """
+        set initial parameters.  
+        """
+
+        init_d = get_starting_pos_beta_with_test(data, test_data, pops)
+                                             
+        """
+        set phi's
+        """
+
+        init_d['phi_a'], init_d['phi_b'], init_d['phi_c'] = 0.4, 0.4, 0.4
+
+
+        fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True, init = [init_d for i in xrange(self.chains)])
+        #fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True)
+
+        traces = fit.extract(permuted=True)
+
+        posteriors = fixed_phi_m_posterior({})
+        N = len(data)
+        d_A, d_B, d_C = {}, {}, {}
+        d_A_test, d_B_test, d_C_test = {}, {}, {}
+        num_samples = traces['as'].shape[0]
+        if patient_K < num_samples:
+            to_keep = [int(z*num_samples/patient_K) for z in range(patient_K)]
+        else:
+            to_keep = range(num_samples)
+
+        the_traces = fit.extract()
+
+        for i in xrange(N):
+            try:
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep,i])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep,i])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep,i])
+            except:
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep])
+
+
+        N_test = len(test_data)
+
+        for i in xrange(N_test):
+            try:
+                d_A_test[test_data[i].pid] = pandas.Series(the_traces['as_test'][to_keep,i])
+                d_B_test[test_data[i].pid] = pandas.Series(the_traces['bs_test'][to_keep,i])
+                d_C_test[test_data[i].pid] = pandas.Series(the_traces['cs_test'][to_keep,i])
+            except:
+                d_A_test[test_data[i].pid] = pandas.Series(the_traces['as_test'][to_keep])
+                d_B_test[test_data[i].pid] = pandas.Series(the_traces['bs_test'][to_keep])
+                d_C_test[test_data[i].pid] = pandas.Series(the_traces['cs_test'][to_keep])
+
+
+                d_C_test[test_data[i].pid] = pandas.Series(fit.extract()['cs_test'][to_keep])
+
+        posteriors['As'] = pandas.DataFrame(d_A)
+        posteriors['Bs'] = pandas.DataFrame(d_B)
+        posteriors['Cs'] = pandas.DataFrame(d_C)
+
+        posteriors['As_test'] = pandas.DataFrame(d_A_test)
+        posteriors['Bs_test'] = pandas.DataFrame(d_B_test)
+        posteriors['Cs_test'] = pandas.DataFrame(d_C_test)
+
+        
+        # need to convert arrays to dataframes, and give them the same indicies as in data
+
+        try:
+            posteriors['B_a'] = pandas.DataFrame(traces['B_a'][to_keep,i])
+        except:
+            posteriors['B_a'] = pandas.DataFrame(traces['B_a'][to_keep])
+        posteriors['B_a'].columns = _a_datum.xa.index
+        
+        try:
+            posteriors['B_b'] = pandas.DataFrame(traces['B_b'][to_keep,i])
+        except:
+            posteriors['B_b'] = pandas.DataFrame(traces['B_b'][to_keep])
+        posteriors['B_b'].columns = _a_datum.xb.index
+
+        try:
+            posteriors['B_c'] = pandas.DataFrame(traces['B_c'][to_keep,i])
+        except:
+            posteriors['B_c'] = pandas.DataFrame(traces['B_c'][to_keep])
+        posteriors['B_c'].columns = _a_datum.xb.index
+
+
+        posteriors['phi_a'] = pandas.DataFrame(traces['phi_a'])
+        posteriors['phi_a'].columns = ['phi_a']
+        posteriors['phi_b'] = pandas.DataFrame(traces['phi_b'])
+        posteriors['phi_b'].columns = ['phi_b']
+        posteriors['phi_c'] = pandas.DataFrame(traces['phi_c'])
+        posteriors['phi_c'].columns = ['phi_c']
+
+        posteriors['phi_m'] = self.phi_m
+
+        #posteriors['phi_m'] = pandas.DataFrame(traces['phi_m'])
+        #posteriors['phi_m'].columns = ['phi_m']
+
+        return posteriors
+
+
+
+class beta_mixture_phi_m_fixed_phis_fixed_has_test_f(possibly_cached_folder):
+    """
+    returns posteriors for diffcovs model, using pystan instead of rstan
+    """
+    
+    def get_introspection_key(self):
+        return '%s_%s_%s_%d_%d_%d_%.3f_%.3f_%.3f_%.3f' % ('mix_allphis_fixed_test', self.get_pops_f.get_key(), self.hypers.get_key(), self.iters, self.chains, self.seed, self.phi_m, self.phi_a, self.phi_b, self.phi_c)
+        
+    def key_f(self, data, test_data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data, test_data):
+        #print data, test_data
+        return '%s/%s/%s' % (data.get_location(), 'pytrained_diffcovs', self.get_pops_f.get_key())
+
+    print_handler_f = staticmethod(folder_adapter(write_posterior_traces))
+
+    read_f = staticmethod(read_posterior_traces)
+
+    def has_file_content(self, data):
+        return os.path.exists('%s/%s' % (self.full_file_path_f(data), 'out_B_a.csv'))
+
+    def __init__(self, phi_m, phi_a, phi_b, phi_c, get_pops_f, hypers, iters, chains, seed):
+        self.get_pops_f, self.hypers, self.iters, self.chains, self.seed = get_pops_f, hypers, iters, chains, seed
+        self.phi_m = phi_m
+        self.phi_a, self.phi_b, self.phi_c = phi_a, phi_b, phi_c
+        self.diffcovs_model_file = '%s/%s/%s' % (global_stuff.home, 'recovery_curve/stan_files', 'full_model_diffcovs_beta_noise_fixed_mixture_phis_fixed_has_test.stan')
+
+    #@save_and_memoize
+    @key
+    @read_from_pickle
+#    @save_to_file
+    @save_to_pickle
+    def __call__(self, data, test_data):
+        """
+        need to convert data to proper form.  also need to convert to my form, which is a dictionary of dataframes, where keys are the original function objects
+        """
+        import pystan
+
+        d = {}
+
+        pops = self.get_pops_f(data)
+        d['pop_a'] = pops.pop_a
+        d['pop_b'] = pops.pop_b
+        d['pop_c'] = pops.pop_c
+
+        d['c_a'] = self.hypers.c_a
+        d['c_b'] = self.hypers.c_b
+        d['c_c'] = self.hypers.c_c
+        d['l_a'] = self.hypers.l_a
+        d['l_b'] = self.hypers.l_b
+        d['l_c'] = self.hypers.l_c
+        #d['l_m'] = self.hypers.l_m
+
+        d['N'] = len(data)
+        _a_datum = iter(data).next()
+        d['K_A'] = len(_a_datum.xa)
+        d['K_B'] = len(_a_datum.xb)
+        d['K_C'] = len(_a_datum.xc)
+
+        xas = pandas.DataFrame({a_datum.pid:a_datum.xa for a_datum in data})
+        xbs = pandas.DataFrame({a_datum.pid:a_datum.xb for a_datum in data})
+        xcs = pandas.DataFrame({a_datum.pid:a_datum.xc for a_datum in data})
+        d['xas'] = xas.T.as_matrix()
+        d['xbs'] = xbs.T.as_matrix()
+        d['xcs'] = xcs.T.as_matrix()
+
+        d['ss'] = [a_datum.s for a_datum in data]
+
+        ls = reduce(lambda x, a_datum: x + [len(a_datum.ys)], data, [])
+        ts = reduce(lambda x, a_datum: x + a_datum.ys.index.tolist(), data, [])
+        vs = reduce(lambda x, a_datum: x + a_datum.ys.tolist(), data, [])
+        d['ls'] = ls
+        d['ts'] = ts
+        d['vs'] = vs
+        d['L'] = len(ts)
+        d['phi_m'] = self.phi_m
+        assert len(ts) == sum(ls)
+
+
+        d['N_test'] = len(test_data)
+
+        xas_test = pandas.DataFrame({a_datum.pid:a_datum.xa for a_datum in test_data})
+        xbs_test = pandas.DataFrame({a_datum.pid:a_datum.xb for a_datum in test_data})
+        xcs_test = pandas.DataFrame({a_datum.pid:a_datum.xc for a_datum in test_data})
+        d['xas_test'] = xas_test.T.as_matrix()
+        d['xbs_test'] = xbs_test.T.as_matrix()
+        d['xcs_test'] = xcs_test.T.as_matrix()
+
+        d['ss_test'] = [a_datum.s for a_datum in test_data]
+
+
+        ls_test = reduce(lambda x, a_datum: x + [len(a_datum.ys)], test_data, [])
+        ts_test = reduce(lambda x, a_datum: x + a_datum.ys.index.tolist(), test_data, [])
+        vs_test = reduce(lambda x, a_datum: x + a_datum.ys.tolist(), test_data, [])
+        d['ls_test'] = ls_test
+        d['ts_test'] = ts_test
+        d['vs_test'] = vs_test
+        d['L_test'] = len(ts_test)
+
+        d['phi_a'] = self.phi_a
+        d['phi_b'] = self.phi_b
+        d['phi_c'] = self.phi_c
+        
+        """
+        set initial parameters.  
+        """
+
+        init_d = get_starting_pos_beta_with_test(data, test_data, pops)
+                                             
+        """
+        set phi's
+        """
+
+        #init_d['phi_a'], init_d['phi_b'], init_d['phi_c'] = 0.4, 0.4, 0.4
+
+        init_d['pis'] = [0.5 for x in xrange(len(data))]
+        init_d['R'] = 0.5
+
+        fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True, init = [init_d for i in xrange(self.chains)])
+        #fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True)
+
+        traces = fit.extract(permuted=True)
+
+        posteriors = fixed_phi_m_posterior({})
+        N = len(data)
+        d_A, d_B, d_C = {}, {}, {}
+        d_pis = {}
+        d_A_test, d_B_test, d_C_test = {}, {}, {}
+        num_samples = traces['as'].shape[0]
+        if patient_K < num_samples:
+            to_keep = [int(z*num_samples/patient_K) for z in range(patient_K)]
+        else:
+            to_keep = range(num_samples)
+
+        the_traces = fit.extract()
+
+        for i in xrange(N):
+            try:
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep,i])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep,i])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep,i])
+                d_pis[data[i].pid] = pandas.Series(the_traces['pis'][to_keep,i])
+            except:
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep])
+                d_pis[data[i].pid] = pandas.Series(the_traces['pis'][to_keep])
+
+
+        N_test = len(test_data)
+
+        for i in xrange(N_test):
+            try:
+                d_A_test[test_data[i].pid] = pandas.Series(the_traces['as_test'][to_keep,i])
+                d_B_test[test_data[i].pid] = pandas.Series(the_traces['bs_test'][to_keep,i])
+                d_C_test[test_data[i].pid] = pandas.Series(the_traces['cs_test'][to_keep,i])
+            except:
+                d_A_test[test_data[i].pid] = pandas.Series(the_traces['as_test'][to_keep])
+                d_B_test[test_data[i].pid] = pandas.Series(the_traces['bs_test'][to_keep])
+                d_C_test[test_data[i].pid] = pandas.Series(the_traces['cs_test'][to_keep])
+
+
+                d_C_test[test_data[i].pid] = pandas.Series(fit.extract()['cs_test'][to_keep])
+
+        posteriors['As'] = pandas.DataFrame(d_A)
+        posteriors['Bs'] = pandas.DataFrame(d_B)
+        posteriors['Cs'] = pandas.DataFrame(d_C)
+        posteriors['pis'] = pandas.DataFrame(d_pis)
+
+        posteriors['As_test'] = pandas.DataFrame(d_A_test)
+        posteriors['Bs_test'] = pandas.DataFrame(d_B_test)
+        posteriors['Cs_test'] = pandas.DataFrame(d_C_test)
+
+        
+        # need to convert arrays to dataframes, and give them the same indicies as in data
+
+        try:
+            posteriors['B_a'] = pandas.DataFrame(traces['B_a'][to_keep,i])
+        except:
+            posteriors['B_a'] = pandas.DataFrame(traces['B_a'][to_keep])
+        posteriors['B_a'].columns = _a_datum.xa.index
+        
+        try:
+            posteriors['B_b'] = pandas.DataFrame(traces['B_b'][to_keep,i])
+        except:
+            posteriors['B_b'] = pandas.DataFrame(traces['B_b'][to_keep])
+        posteriors['B_b'].columns = _a_datum.xb.index
+
+        try:
+            posteriors['B_c'] = pandas.DataFrame(traces['B_c'][to_keep,i])
+        except:
+            posteriors['B_c'] = pandas.DataFrame(traces['B_c'][to_keep])
+        posteriors['B_c'].columns = _a_datum.xb.index
+
+        """
+        posteriors['phi_a'] = pandas.DataFrame(traces['phi_a'])
+        posteriors['phi_a'].columns = ['phi_a']
+        posteriors['phi_b'] = pandas.DataFrame(traces['phi_b'])
+        posteriors['phi_b'].columns = ['phi_b']
+        posteriors['phi_c'] = pandas.DataFrame(traces['phi_c'])
+        posteriors['phi_c'].columns = ['phi_c']
+        """
+
+        posteriors['R'] = pandas.DataFrame(traces['R'])
+
+        posteriors['phi_m'] = self.phi_m
+
+        #posteriors['phi_m'] = pandas.DataFrame(traces['phi_m'])
+        #posteriors['phi_m'].columns = ['phi_m']
+
+        return posteriors
+
+class get_pystan_diffcovs_posterior_beta_mixture_phi_m_fixed_has_test_f(possibly_cached_folder):
+    """
+    returns posteriors for diffcovs model, using pystan instead of rstan
+    """
+    
+    def get_introspection_key(self):
+        return '%s_%s_%s_%d_%d_%d_%.7f' % ('pydiffcovs_beta_mix_phimfixed_has_test', self.get_pops_f.get_key(), self.hypers.get_key(), self.iters, self.chains, self.seed, self.phi_m)
+        
+    def key_f(self, data, test_data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data, test_data):
+        #print data, test_data
+        return '%s/%s/%s' % (data.get_location(), 'pytrained_diffcovs', self.get_pops_f.get_key())
+
+    print_handler_f = staticmethod(folder_adapter(write_posterior_traces))
+
+    read_f = staticmethod(read_posterior_traces)
+
+    def has_file_content(self, data):
+        return os.path.exists('%s/%s' % (self.full_file_path_f(data), 'out_B_a.csv'))
+
+    def __init__(self, phi_m, get_pops_f, hypers, iters, chains, seed):
+        self.get_pops_f, self.hypers, self.iters, self.chains, self.seed = get_pops_f, hypers, iters, chains, seed
+        self.phi_m = phi_m
+        self.diffcovs_model_file = '%s/%s/%s' % (global_stuff.home, 'recovery_curve/stan_files', 'full_model_diffcovs_beta_noise_fixed_mixture_has_test.stan')
+
+    #@save_and_memoize
+    @key
+#    @read_from_pickle
+#    @save_to_file
+    @save_to_pickle
+    def __call__(self, data, test_data):
+        """
+        need to convert data to proper form.  also need to convert to my form, which is a dictionary of dataframes, where keys are the original function objects
+        """
+        import pystan
+
+        d = {}
+
+        pops = self.get_pops_f(data)
+        d['pop_a'] = pops.pop_a
+        d['pop_b'] = pops.pop_b
+        d['pop_c'] = pops.pop_c
+
+        d['c_a'] = self.hypers.c_a
+        d['c_b'] = self.hypers.c_b
+        d['c_c'] = self.hypers.c_c
+        d['l_a'] = self.hypers.l_a
+        d['l_b'] = self.hypers.l_b
+        d['l_c'] = self.hypers.l_c
+        #d['l_m'] = self.hypers.l_m
+
+        d['N'] = len(data)
+        _a_datum = iter(data).next()
+        d['K_A'] = len(_a_datum.xa)
+        d['K_B'] = len(_a_datum.xb)
+        d['K_C'] = len(_a_datum.xc)
+
+        xas = pandas.DataFrame({a_datum.pid:a_datum.xa for a_datum in data})
+        xbs = pandas.DataFrame({a_datum.pid:a_datum.xb for a_datum in data})
+        xcs = pandas.DataFrame({a_datum.pid:a_datum.xc for a_datum in data})
+        d['xas'] = xas.T.as_matrix()
+        d['xbs'] = xbs.T.as_matrix()
+        d['xcs'] = xcs.T.as_matrix()
+
+        d['ss'] = [a_datum.s for a_datum in data]
+
+        ls = reduce(lambda x, a_datum: x + [len(a_datum.ys)], data, [])
+        ts = reduce(lambda x, a_datum: x + a_datum.ys.index.tolist(), data, [])
+        vs = reduce(lambda x, a_datum: x + a_datum.ys.tolist(), data, [])
+        d['ls'] = ls
+        d['ts'] = ts
+        d['vs'] = vs
+        d['L'] = len(ts)
+        d['phi_m'] = self.phi_m
+        assert len(ts) == sum(ls)
+
+
+        d['N_test'] = len(test_data)
+
+        xas_test = pandas.DataFrame({a_datum.pid:a_datum.xa for a_datum in test_data})
+        xbs_test = pandas.DataFrame({a_datum.pid:a_datum.xb for a_datum in test_data})
+        xcs_test = pandas.DataFrame({a_datum.pid:a_datum.xc for a_datum in test_data})
+        d['xas_test'] = xas_test.T.as_matrix()
+        d['xbs_test'] = xbs_test.T.as_matrix()
+        d['xcs_test'] = xcs_test.T.as_matrix()
+
+        d['ss_test'] = [a_datum.s for a_datum in test_data]
+
+
+        ls_test = reduce(lambda x, a_datum: x + [len(a_datum.ys)], test_data, [])
+        ts_test = reduce(lambda x, a_datum: x + a_datum.ys.index.tolist(), test_data, [])
+        vs_test = reduce(lambda x, a_datum: x + a_datum.ys.tolist(), test_data, [])
+        d['ls_test'] = ls_test
+        d['ts_test'] = ts_test
+        d['vs_test'] = vs_test
+        d['L_test'] = len(ts_test)
+
+        
+        """
+        set initial parameters.  
+        """
+
+        init_d = get_starting_pos_beta_with_test(data, test_data, pops)
+                                             
+        """
+        set phi's
+        """
+
+        init_d['phi_a'], init_d['phi_b'], init_d['phi_c'] = 0.4, 0.4, 0.4
+
+        init_d['pis'] = [0.5 for x in xrange(len(data))]
+        init_d['R'] = 0.5
+
+        fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True, init = [init_d for i in xrange(self.chains)])
+        #fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True)
+
+        traces = fit.extract(permuted=True)
+
+        posteriors = fixed_phi_m_posterior({})
+        N = len(data)
+        d_A, d_B, d_C = {}, {}, {}
+        d_pis = {}
+        d_A_test, d_B_test, d_C_test = {}, {}, {}
+        num_samples = traces['as'].shape[0]
+        if patient_K < num_samples:
+            to_keep = [int(z*num_samples/patient_K) for z in range(patient_K)]
+        else:
+            to_keep = range(num_samples)
+
+        the_traces = fit.extract()
+
+        for i in xrange(N):
+            try:
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep,i])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep,i])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep,i])
+                d_pis[data[i].pid] = pandas.Series(the_traces['pis'][to_keep,i])
+            except:
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep])
+                d_pis[data[i].pid] = pandas.Series(the_traces['pis'][to_keep])
+
+
+        N_test = len(test_data)
+
+        for i in xrange(N_test):
+            try:
+                d_A_test[test_data[i].pid] = pandas.Series(the_traces['as_test'][to_keep,i])
+                d_B_test[test_data[i].pid] = pandas.Series(the_traces['bs_test'][to_keep,i])
+                d_C_test[test_data[i].pid] = pandas.Series(the_traces['cs_test'][to_keep,i])
+            except:
+                d_A_test[test_data[i].pid] = pandas.Series(the_traces['as_test'][to_keep])
+                d_B_test[test_data[i].pid] = pandas.Series(the_traces['bs_test'][to_keep])
+                d_C_test[test_data[i].pid] = pandas.Series(the_traces['cs_test'][to_keep])
+
+
+                d_C_test[test_data[i].pid] = pandas.Series(fit.extract()['cs_test'][to_keep])
+
+        posteriors['As'] = pandas.DataFrame(d_A)
+        posteriors['Bs'] = pandas.DataFrame(d_B)
+        posteriors['Cs'] = pandas.DataFrame(d_C)
+        posteriors['pis'] = pandas.DataFrame(d_pis)
+
+        posteriors['As_test'] = pandas.DataFrame(d_A_test)
+        posteriors['Bs_test'] = pandas.DataFrame(d_B_test)
+        posteriors['Cs_test'] = pandas.DataFrame(d_C_test)
+
+        
+        # need to convert arrays to dataframes, and give them the same indicies as in data
+
+        try:
+            posteriors['B_a'] = pandas.DataFrame(traces['B_a'][to_keep,i])
+        except:
+            posteriors['B_a'] = pandas.DataFrame(traces['B_a'][to_keep])
+        posteriors['B_a'].columns = _a_datum.xa.index
+        
+        try:
+            posteriors['B_b'] = pandas.DataFrame(traces['B_b'][to_keep,i])
+        except:
+            posteriors['B_b'] = pandas.DataFrame(traces['B_b'][to_keep])
+        posteriors['B_b'].columns = _a_datum.xb.index
+
+        try:
+            posteriors['B_c'] = pandas.DataFrame(traces['B_c'][to_keep,i])
+        except:
+            posteriors['B_c'] = pandas.DataFrame(traces['B_c'][to_keep])
+        posteriors['B_c'].columns = _a_datum.xb.index
+
+
+        posteriors['phi_a'] = pandas.DataFrame(traces['phi_a'])
+        posteriors['phi_a'].columns = ['phi_a']
+        posteriors['phi_b'] = pandas.DataFrame(traces['phi_b'])
+        posteriors['phi_b'].columns = ['phi_b']
+        posteriors['phi_c'] = pandas.DataFrame(traces['phi_c'])
+        posteriors['phi_c'].columns = ['phi_c']
+
+        posteriors['R'] = pandas.DataFrame(traces['R'])
+
+        posteriors['phi_m'] = self.phi_m
+
+        #posteriors['phi_m'] = pandas.DataFrame(traces['phi_m'])
+        #posteriors['phi_m'].columns = ['phi_m']
+
+        return posteriors
+
 
 
 class get_pystan_diffcovs_truncated_normal_with_test_posterior_f(possibly_cached_folder):
@@ -2619,8 +3783,10 @@ class get_pystan_diffcovs_posterior_phi_m_fixed_has_test_f(possibly_cached_folde
 
     #@save_and_memoize
     @key
-#    @read_from_pickle
+    @memoize
+    @read_from_pickle
 #    @save_to_file
+    @memoize
     @save_to_pickle
     def __call__(self, data, test_data):
         """
@@ -2688,8 +3854,6 @@ class get_pystan_diffcovs_posterior_phi_m_fixed_has_test_f(possibly_cached_folde
         d['vs_test'] = vs_test
         d['L_test'] = len(ts_test)
 
-        pdb.set_trace()
-
         fit = pystan.stan(file=self.diffcovs_model_file, data=d, iter=self.iters, seed=self.seed+1, chains=self.chains, verbose=True)
 
         traces = fit.extract(permuted=True)
@@ -2705,28 +3869,32 @@ class get_pystan_diffcovs_posterior_phi_m_fixed_has_test_f(possibly_cached_folde
             to_keep = range(num_samples)
 
 
+        the_traces = fit.extract()
+
         for i in xrange(N):
+            print 'hh', i
             try:
-                d_A[data[i].pid] = pandas.Series(fit.extract()['as'][to_keep,i])
-                d_B[data[i].pid] = pandas.Series(fit.extract()['bs'][to_keep,i])
-                d_C[data[i].pid] = pandas.Series(fit.extract()['cs'][to_keep,i])
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep,i])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep,i])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep,i])
             except:
-                d_A[data[i].pid] = pandas.Series(fit.extract()['as'][to_keep])
-                d_B[data[i].pid] = pandas.Series(fit.extract()['bs'][to_keep])
-                d_C[data[i].pid] = pandas.Series(fit.extract()['cs'][to_keep])
+                d_A[data[i].pid] = pandas.Series(the_traces['as'][to_keep])
+                d_B[data[i].pid] = pandas.Series(the_traces['bs'][to_keep])
+                d_C[data[i].pid] = pandas.Series(the_traces['cs'][to_keep])
 
 
         N_test = len(test_data)
 
         for i in xrange(N_test):
+            print 'gg', i
             try:
-                d_A_test[test_data[i].pid] = pandas.Series(fit.extract()['as_test'][to_keep,i])
-                d_B_test[test_data[i].pid] = pandas.Series(fit.extract()['bs_test'][to_keep,i])
-                d_C_test[test_data[i].pid] = pandas.Series(fit.extract()['cs_test'][to_keep,i])
+                d_A_test[test_data[i].pid] = pandas.Series(the_traces['as_test'][to_keep,i])
+                d_B_test[test_data[i].pid] = pandas.Series(the_traces['bs_test'][to_keep,i])
+                d_C_test[test_data[i].pid] = pandas.Series(the_traces['cs_test'][to_keep,i])
             except:
-                d_A_test[test_data[i].pid] = pandas.Series(fit.extract()['as_test'][to_keep])
-                d_B_test[test_data[i].pid] = pandas.Series(fit.extract()['bs_test'][to_keep])
-                d_C_test[test_data[i].pid] = pandas.Series(fit.extract()['cs_test'][to_keep])
+                d_A_test[test_data[i].pid] = pandas.Series(the_traces['as_test'][to_keep])
+                d_B_test[test_data[i].pid] = pandas.Series(the_traces['bs_test'][to_keep])
+                d_C_test[test_data[i].pid] = pandas.Series(the_traces['cs_test'][to_keep])
 
         posteriors['As'] = pandas.DataFrame(d_A)
         posteriors['Bs'] = pandas.DataFrame(d_B)
@@ -2769,6 +3937,8 @@ class get_pystan_diffcovs_posterior_phi_m_fixed_has_test_f(possibly_cached_folde
 
         #posteriors['phi_m'] = pandas.DataFrame(traces['phi_m'])
         #posteriors['phi_m'].columns = ['phi_m']
+
+        return posteriors
 
         return posteriors
 
