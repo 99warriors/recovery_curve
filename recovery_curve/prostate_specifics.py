@@ -573,20 +573,41 @@ class plot_posterior_boxplots(possibly_cached):
         """
         put posteriors into list.  then draw boxplots, and add in true values and labels
         """
-        l = [posteriors[param_name] for param_name in self.param_names]
-        ax.boxplot(l, sym='')
+        from scripts.for_paper import options as options
+        def do_suff(param_list, param_names, true_params):
+            l = [posteriors[param_name] for param_name in self.param_names]
+            ax.boxplot(param_list, sym='')
 
-        num_params = len(self.param_names)
-        ax.set_xticks(range(1,num_params+1))
-        ax.set_xticklabels(self.param_names, rotation='vertical')
-        xticks = ax.get_xticklabels()
-        for xtick,i in zip(xticks,range(len(xticks))):
-            xtick.set_fontsize(10) 
+            num_params = len(param_names)
+            ax.set_xticks(range(1,num_params+1))
+            ax.set_xticklabels(param_names, rotation='vertical')
+            xticks = ax.get_xticklabels()
+            for xtick,i in zip(xticks,range(len(xticks))):
+                xtick.set_fontsize(options.textsize) 
 
-        for param_name, i in zip(self.param_names,xrange(num_params)):
-            ax.axhline(y = true_params[param_name], xmin=i/float(num_params), xmax=(i+1)/float(num_params), color = 'green')
+            for param_name, i in zip(param_names,xrange(num_params)):
+                ax.axhline(y = true_params[param_name], xmin=i/float(num_params), xmax=(i+1)/float(num_params), color = 'green')
 
         return ax
+
+
+
+def plot_posterior_boxplots_f(ax, param_list, param_names, param_display_names, true_params):
+    #l = [posteriors[param_name] for param_name in param_names]
+    from scripts.for_paper import options as options
+    ax.boxplot(param_list, sym='')
+
+    num_params = len(param_names)
+    ax.set_xticks(range(1,num_params+1))
+    ax.set_xticklabels(param_display_names, rotation='horizontal')
+    xticks = ax.get_xticklabels()
+    for xtick,i in zip(xticks,range(len(xticks))):
+        xtick.set_fontsize(options.textsize) 
+
+    for tick in ax.yaxis.get_major_ticks():
+        tick.label.set_fontsize(options.textsize+5) 
+    for param_name, i in zip(param_names,xrange(num_params)):
+        ax.axhline(y = true_params[param_name], xmin=i/float(num_params), xmax=(i+1)/float(num_params), color = 'green')
 
 
 class plot_diffcovs_posterior_f(possibly_cached):
@@ -755,7 +776,13 @@ class get_param_mean_f(possibly_cached):
         
 
 
+class max_f(keyed_object):
 
+    def get_introspection_key(self):
+        return 'max'
+
+    def __call__(self, l):
+        return max(l)
 
 class mean_f(keyed_object):
 
@@ -763,6 +790,7 @@ class mean_f(keyed_object):
         return 'meanf'
 
     def __call__(self, l):
+        return np.mean(l)
         total = 0.0
         count = 0.0
         for x in l:
@@ -830,9 +858,9 @@ class cross_validated_scores_f(possibly_cached):
         self.get_predictor_f, self.cv_f, self.times = get_predictor_f, cv_f, times
 
     @key
-    @memoize
+    #@memoize
     def __call__(self, data):
-        fold_scores = []
+        fold_scores = keyed_list()
         for train_data, test_data in self.cv_f(data):
             if self.get_predictor_f.normal():
                 predictor = self.get_predictor_f(train_data)
@@ -841,11 +869,53 @@ class cross_validated_scores_f(possibly_cached):
 
 
             def _per_data_f(_datum):
-                return (_datum.pid, pandas.Series({time:predictor(_datum, time) for time in self.times}))
+                return (_datum.pid, pandas.Series({time:predictor(_datum, time) for time in self.times if time in _datum.ys.index}))
             raw = parallel_map(_per_data_f, test_data, global_stuff.num_processors)
             fold_scores.append(pandas.DataFrame({x:y for x,y in raw}))
             #fold_scores.append(pandas.DataFrame({datum.pid:{time:predictor(datum, time) for time in self.times} for datum in test_data if int(datum.pid)%1==0}))
         return keyed_DataFrame(pandas.concat(fold_scores, axis=1))
+
+
+
+class cross_validated_scores_notsep_f(possibly_cached):
+    """
+    get_predictor_f is a factory for trained predictor objects, as in it does training
+    returns a list of dataframes
+    """
+    def get_introspection_key(self):
+        return '%s_%s_%s' % ('cvscorens', self.get_predictor_f.get_key(), self.cv_f.get_key())
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s' % (global_stuff.data_home, 'scores')
+
+    #print_handler_f = staticmethod(write_DataFrame)
+
+    #read_f = staticmethod(read_DataFrame)
+
+    def __init__(self, get_predictor_f, cv_f, times):
+        self.get_predictor_f, self.cv_f, self.times = get_predictor_f, cv_f, times
+
+    @key
+    #@memoize
+    def __call__(self, data):
+        fold_scores = keyed_list()
+        for train_data, test_data in self.cv_f(data):
+            if self.get_predictor_f.normal():
+                predictor = self.get_predictor_f(train_data)
+            else:
+                predictor = self.get_predictor_f(train_data, test_data)
+
+
+            def _per_data_f(_datum):
+                return (_datum.pid, pandas.Series({time:predictor(_datum, time) for time in self.times if time in _datum.ys.index}))
+            raw = parallel_map(_per_data_f, test_data, global_stuff.num_processors)
+            fold_scores.append(keyed_DataFrame({x:y for x,y in raw}))
+            #fold_scores.append(pandas.DataFrame({datum.pid:{time:predictor(datum, time) for time in self.times} for datum in test_data if int(datum.pid)%1==0}))
+        return fold_scores
+        #return keyed_DataFrame(pandas.concat(fold_scores, axis=1))
 
 
 class plot_predictions_fig_f(possibly_cached):
@@ -866,7 +936,8 @@ class plot_predictions_fig_f(possibly_cached):
         ax.set_ylabel('fxn value')
         for plotter in self.plotters:
             plotter(ax, datum)
-        add_series_to_ax(datum.ys, ax, 'black', 'true', 'solid', linewidth=3)
+        ax.plot(datum.ys.index, datum.ys, color = 'black', linewidth=3, marker='o')
+        #add_series_to_ax(datum.ys, ax, 'black', 'true', 'solid', linewidth=3)
 
         try:
             abc_ys = pandas.Series({time:the_f(time,datum.s,datum.true_a,datum.true_b,datum.true_c) for time in np.linspace(0,50,200)})
@@ -890,6 +961,7 @@ class plot_predictions_fig_f(possibly_cached):
         ax.plot(-1,datum.s,'bo')
         ax.set_xlim(-2,50)
         ax.set_ylim(-0.1, 1.1)
+        #ax.set_ylim((0,datum.s))
         return fig
 
 class plot_all_predictions_fig_f(possibly_cached):
@@ -920,10 +992,47 @@ class plot_all_predictions_fig_f(possibly_cached):
                     predictor = trainer(train_data, test_data)
                 plotters.append(plotter_cons(predictor))
             prediction_plotter = plot_predictions_fig_f(plotters)
-            figs += [[datum.s,prediction_plotter(datum)] for datum in test_data]
+            def asdf(datum):
+                return (datum, prediction_plotter(datum))
+            figs += parallel_map(asdf, test_data[0:40], global_stuff.num_processors)
+
+        def get_init_bin(_datum):
+            if _datum.xa.iloc[2] > 0:
+                return 0
+            elif _datum.xa.iloc[1] > 0:
+                return 1
+            elif _datum.xa.iloc[3] > 0:
+                return 2
+            else:
+                return 3
+
+        def get_age_bin(_datum):
+            if _datum.xa.iloc[4] > 0:
+                return 0
+            elif _datum.xa.iloc[5] > 0:
+                return 1
+            else:
+                return 2
+            
+        def cmp_datum(d1g, d2g):
+            d1 = d1g[0]
+            d2 = d2g[0]
+            age_cmp = cmp(get_age_bin(d1), get_age_bin(d2))
+            if age_cmp != 0:
+                return age_cmp
+            return cmp(d1.s, d2.s)
+        return [y[1] for y in figs]
+        gg = [y[1] for y in sorted(figs,cmp=cmp_datum)]
+        
+        return gg
+#            figs += [[datum.s,prediction_plotter(datum)] for datum in test_data]
             #figs += [[datum.s,prediction_plotter(datum)] for datum in test_data if int(datum.pid) in [30503,30424,30376,30218,30117,30034]]
-        return [y[1] for y in sorted(figs,key=lambda x:x[0])]
+#        return [y[1] for y in sorted(figs,key=lambda x:x[0])]
                 
+
+
+
+
             
 class plot_scalar_prediction_fig(keyed_object):
 
@@ -979,15 +1088,21 @@ class generic_plot_all_predictions_fig_f(possibly_cached):
                     predictor = trainer(train_data, test_data)
                 plotters.append(plotter_cons(predictor))
             prediction_plotter = self.single_fig_plotter(plotters)
+            
+            # sort by age and then initial level
 
             figs = map(prediction_plotter, test_data[0:20])
             #figs = parallel_map(prediction_plotter, test_data[0:20], global_stuff.num_processors)
             #figs = parallel_map(prediction_plotter, test_data, global_stuff.num_processors)
             #figs += [[datum.s,prediction_plotter(datum)] for datum in test_data]
             #figs += [prediction_plotter(datum) for datum in test_data]
-            #figs += [[datum.s,prediction_plotter(datum)] for datum in test_data if int(datum.pid) in [30503,30424,30376,30218,30117,30034]]
-        return figs
-        return [y[1] for y in sorted(figs,key=lambda x:x[0])]
+            figs += [(datum,prediction_plotter(datum)) for datum in test_data]
+        def cmp_datum(d1, d2):
+            age_cmp = cmp(options.get_age_bin(d1), options.get_age_bin(d2))
+            if age_cmp != 0:
+                return age_cmp
+            return cmp(d1.s, d2.s)
+        return [y[1] for y in sorted(figs,cmp=cmp_datum)]
 
 class cv_fold_f(possibly_cached):
     """
@@ -1065,6 +1180,18 @@ class get_true_val_abc_fit(keyed_object):
 
     display_color = 'red'
 
+
+class beta_loss_f(keyed_object):
+
+    def get_introspection_key(self):
+        return 'beta_%.4f' % self.phi
+
+    def __init__(self, phi):
+        self.phi = phi
+
+    def __call__(self, pred, truth):
+        return -1.0 * get_beta_log_p(truth, pred, self.phi)
+
 class loss_f(keyed_object):
 
     def get_introspection_key(self):
@@ -1074,7 +1201,31 @@ class loss_f(keyed_object):
         self.get_true_val_f, self.distance_f = get_true_val_f, distance_f
 
     def __call__(self, _datum, time, score):
+        print self.get_true_val_f(_datum, time), score, self.distance_f(self.get_true_val_f(_datum, time), score)
         return self.distance_f(self.get_true_val_f(_datum, time), score)
+
+
+class prop_loss(keyed_object):
+
+    def get_introspection_key(self):
+        #return 'proploss'
+        return '%s_%s' % ('proploss', self.backing_f.get_key())
+
+    def __init__(self, backing_f):
+        self.backing_f = backing_f
+
+    def __call__(self, _datum, time, score):
+        scaled_abs_loss = abs(_datum.ys[time] - score) / _datum.s
+        return self.backing_f(scaled_abs_loss)
+
+
+class signed_loss_raw(keyed_object):
+
+    def get_introspection_key(self):
+        return 'asdf'
+
+    def __call__(self, x):
+        return x
 
 class scaled_loss_f(keyed_object):
 
@@ -1115,6 +1266,18 @@ class signed_loss_f(keyed_object):
     def __call__(self, true_val, pred):
         return pred - true_val
 
+def cv_losses(scores, loss_f, data):
+    losses_d = {}
+    for pid, _scores in scores.iteritems():
+        temp_d = {}
+        print pid
+        for time, score in _scores.iteritems():
+            if time in data.d[pid].ys.index:
+                temp_d[time] = loss_f(data.d[pid], time, score)
+        losses_d[pid] = pandas.Series(temp_d)
+    losses = pandas.DataFrame(losses_d)
+    return losses
+
 class performance_series_f(possibly_cached):
     """
     returns a dataframe.  mean score will be the first column
@@ -1123,19 +1286,20 @@ class performance_series_f(possibly_cached):
     def __init__(self, loss_f, percentiles, data, times):
         self.loss_f, self.percentiles, self.data, self.times = loss_f, percentiles, data, times
 
-    @key
+    #@key
 #    @save_and_memoize
     def __call__(self, scores):
 
         losses_d = {}
-        for pid, scores in scores.iteritems():
+        for pid, _scores in scores.iteritems():
             temp_d = {}
             print pid
-            print scores
-            print self.data.d[pid].ys
-            for time, score in scores.iteritems():
+            #print scores
+            #print self.data.d[pid].ys
+            for time, score in _scores.iteritems():
                 if time in self.data.d[pid].ys.index:
                     temp_d[time] = self.loss_f(self.data.d[pid], time, score)
+                    print temp_d[time]
             losses_d[pid] = pandas.Series(temp_d)
         losses = pandas.DataFrame(losses_d)
 
@@ -1166,35 +1330,302 @@ class performance_series_f(possibly_cached):
 
     read_f = staticmethod(read_DataFrame)
 
+
+def strat_perf_figs(trainers, cv_f, loss_f, percentiles, trainer_colors, trainer_names, data):
+    """
+    for each of the 12 possible patients, plots the loss over time.  do this agewise and initwise
+    """
+    init_figs = []
+    """
+    get the list of pids for each kind
+    """
+    from scripts.for_paper import options as options
+    bin_pids = {(i,j):[] for i in xrange(options.num_init_bins) for j in xrange(options.num_age_bins)}
+    from scripts.for_paper import options as options
+    for datum in data:
+        bin_pids[(options.get_init_bin(datum), options.get_age_bin(datum))].append(datum.pid)
+
+    """
+    get the losses for each trainer
+    """
+    scores = [cross_validated_scores_f(trainer, cv_f, options.real_times)(data) for trainer in trainers]
+    losses = [cv_losses(score, loss_f, data) for score in scores]
+    
+    """
+    stratify losses by category
+    """
+    bin_losses = [{(i,j):loss.loc[:,[pid in bin_pids[(i,j)] for pid in loss.columns]] for i in xrange(options.num_init_bins) for j in xrange(options.num_age_bins)} for loss in losses]
+
+    """
+    now, go through each patient type, and figure out what to plot for each losses
+    """
+    initwise_figs = []
+    for i in xrange(options.num_init_bins):
+        fig = plt.figure()
+        fig.suptitle('age %d' % i)
+        for j in xrange(options.num_age_bins):
+            ax = fig.add_subplot(2, 2, j+1)
+            ax.set_title('age %d size %d' % (j,len(bin_pids[(i,j)])))
+            for bin_loss, trainer_color, trainer_name in zip(bin_losses, trainer_colors, trainer_names):
+                mean_loss = bin_loss[(i,j)].apply(np.mean, axis=1)
+                ax.plot(mean_loss.index, mean_loss, color=trainer_color, label=trainer_name)
+            ax.legend(prop={'size':5})
+        initwise_figs.append(fig)
+
+    agewise_figs = []
+    for j in xrange(options.num_age_bins):
+        fig = plt.figure()
+        fig.suptitle('age %d' % j)
+        for i in xrange(options.num_init_bins):
+            ax = fig.add_subplot(2, 2, i+1)
+            ax.set_title('init %d size %d' % (j,len(bin_pids[(i,j)])))
+            for bin_loss, trainer_color, trainer_name in zip(bin_losses, trainer_colors, trainer_names):
+                mean_loss = bin_loss[(i,j)].apply(np.mean, axis=1)
+                ax.plot(mean_loss.index, mean_loss, color=trainer_color, label=trainer_name)
+            ax.legend(prop={'size':5})
+        agewise_figs.append(fig)
+
+    return initwise_figs, agewise_figs
+
+
+
+def plot_real_trends(trainer, data):
+
+    def avg_curves(l):
+        df = pandas.DataFrame({i:l[i] for i in xrange(len(l))})
+        return df.apply(np.mean, axis=1)
+
+    from scripts.for_paper import options as options
+
+    if trainer.normal():
+        predictor = trainer(data)
+    else:
+        predictor = trainer(data, data)
+
+    repr_d = {}
+    for datum in data:
+        repr_d[(options.get_init_bin(datum),options.get_age_bin(datum))] = datum
+
+
+    pred_d = {key:pandas.Series([predictor(datum,t) for t in curve_plot_times], index=curve_plot_times)/datum.s for key,datum in repr_d.iteritems()}
+
+    pred_by_init = [[pred_d[(j,i)] for i in xrange(options.num_age_bins)] for j in xrange(options.num_init_bins)]
+    agg_by_init = map(avg_curves, pred_by_init)
+
+    pred_by_age = [[pred_d[(j,i)] for j in xrange(options.num_init_bins)] for i in xrange(options.num_age_bins)]
+    agg_by_age = map(avg_curves, pred_by_age)
+
+
+    """
+    show trend in init
+    """
+
+    init_fig = plt.figure()
+    init_fig.suptitle(options.run_name)
+    ax = plt.subplot2grid((1,2),(0,0))
+    for curve, label, color in zip(agg_by_init, options.init_titles, options.init_colors):
+        ax.plot(curve.index, curve, label = label, color=color)
+    ax.set_xlabel('months')
+    ax.set_ylabel('scaled f')
+    ax.set_title('aggregate curve by init')
+    ax.set_ylim((0,1))
+    ax.legend(prop={'size':5},loc=4)
+    for i, age_label in zip(xrange(options.num_age_bins), options.age_titles):
+        ax = plt.subplot2grid((options.num_age_bins,2),(i,1))
+        ax.set_title(age_label)
+        for j,color in zip(xrange(options.num_init_bins), options.init_colors):
+            curve = pred_d[(j,i)]
+            ax.plot(curve.index, curve, color=color)
+
+    plt.tight_layout()
+
+
+    """
+    show trend in age
+    """
+
+    age_fig = plt.figure()
+    age_fig.suptitle(options.run_name)
+    ax = plt.subplot2grid((1,2),(0,0))
+    for curve, label, color in zip(agg_by_age, options.age_titles, options.age_colors):
+        ax.plot(curve.index, curve, label = label, color = color)
+    ax.set_xlabel('months')
+    ax.set_ylabel('scaled f')
+    ax.set_ylim((0,1))
+    ax.set_title('aggregate curve by age')
+    ax.legend(prop={'size':5},loc=4)
+    for i, init_label in zip(xrange(options.num_init_bins), options.init_titles):
+        ax = plt.subplot2grid((options.num_init_bins,2),(i,1))
+        ax.set_title(init_label)
+        for j, color in zip(xrange(options.num_age_bins), options.age_colors):
+            curve = pred_d[(i,j)]
+            ax.plot(curve.index, curve, color=color)
+
+    plt.tight_layout()        
+
+    return init_fig, age_fig
+
 class model_comparer_f(possibly_cached):
     """
     hard code the loss functions used
     """
 
-    def __init__(self, trainers, cv_f, loss_f, percentiles, times, display_colors, display_names):
+    def __init__(self, trainers, cv_f, loss_f, percentiles, times, display_colors, display_names, filter_f, y_max = None):
         self.trainers, self.cv_f, self.loss_f, self.percentiles, self.times = trainers, cv_f, loss_f, percentiles, times
         self.display_colors, self.display_names = display_colors, display_names
+        self.filter_f = filter_f
+        self.y_max = y_max
 
-    @save_to_file
-    @memoize
+    #@save_to_file
+    #@memoize
     def __call__(self, data):
+        from scripts.for_paper import options as options
         fig = plt.figure()
         ax = fig.add_subplot(1,1,1)
-        fig.suptitle('overall loss under %s, n=%d' % (self.loss_f.get_key(), len(data)))
+        ax.plot([0],[0])
+        #fig.suptitle('overall loss under %s, n=%d' % (self.loss_f.get_key(), len(data)))
+        if self.y_max != None:
+            ax.set_ylim((0,self.y_max))
         for trainer, display_color, display_name in itertools.izip(self.trainers, self.display_colors, self.display_names):
             scores_getter = cross_validated_scores_f(trainer, self.cv_f, self.times)
             scores = scores_getter(data)
+            key = scores.hard_coded_key
+            loc = scores.location
+            #scores = keyed_DataFrame(scores.iloc[:,[self.filter_f(x) for x in scores.columns]])
+            #scores.hard_coded_key = key
+            #scores.location = loc
             _performance_series_f = performance_series_f(self.loss_f, self.percentiles, data, self.times)
             perfs = _performance_series_f(scores)
             add_performances_to_ax(ax, perfs, display_color, display_name)
+            for tick in ax.xaxis.get_major_ticks():
+                tick.label.set_fontsize(options.textsize)
+            for tick in ax.yaxis.get_major_ticks():
+                tick.label.set_fontsize(options.textsize)  
+        """
+        also add in the scores that come from predicting the median of the filtered dataset
+        """
+        """
+        filtered_ys = pandas.DataFrame({x:data.d[x].ys for x in scores.columns if self.filter_f(x)})
+        medians = filtered_ys.apply(np.median, axis=1)
+        losses_d = {}
+        for pid, _ys in filtered_ys.iteritems():
+            temp_d = {}
+            #print pid
+            for time, score in _ys.iteritems():
+
+                if time in data.d[pid].ys.index:
+                    temp_d[time] = self.loss_f(data.d[pid], time, medians[time])
+                
+            losses_d[pid] = pandas.Series(temp_d)
+        losses = pandas.DataFrame(losses_d)
+        median_losses = losses.apply(np.median, axis=1)
+        """
+        #ax.plot(median_losses.index, median_losses, color='magenta')
+
+
         ax.set_xlim(-1.0,50)
-        ax.set_ylim(-0.5,1.1)
-        ax.set_xlabel('time')
-        ax.set_ylabel('loss')
-        ax.legend(prop={'size':6})
+
+        ax.set_xlabel('months', fontsize = options.textsize)
+        ax.set_ylabel('loss', fontsize = options.textsize)
+        ax.legend(prop={'size':options.textsize}, loc=4)
         return fig
 
     def get_introspection_key(self):
+        return 'performances'
+        return '%s_%s_%s' % (self.loss_f.get_key(), self.cv_f.get_key(), self.trainers[0].get_key())
+        return '%s_%s_%s_%s' % ('bs', self.trainers.get_key(), self.cv_f.get_key(), self.loss_f.get_key())
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s' % (global_stuff.for_dropbox,'betweenmodel_perfs')
+
+    print_handler_f = staticmethod(figure_to_pdf)
+
+    read_f = staticmethod(not_implemented_f)
+
+class model_comparer_cv_f(possibly_cached):
+    """
+    hard code the loss functions used
+    for each trainer, plot the performance from each fold
+    """
+
+    def __init__(self, trainers, cv_f, loss_f, percentiles, times, display_colors, display_names, show_folds, filter_f):
+        self.trainers, self.cv_f, self.loss_f, self.percentiles, self.times, self.show_folds = trainers, cv_f, loss_f, percentiles, times, show_folds
+        self.display_colors, self.display_names = display_colors, display_names
+        self.filter_f = filter_f
+
+    #@save_to_file
+    #@memoize
+    def __call__(self, data):
+        from scripts.for_paper import options as options
+        textsize = options.textsize
+        linewidth = options.linewidth
+        fig = plt.figure()
+        ax = fig.add_subplot(1,1,1)
+        ax.plot([0],[0])
+        #fig.suptitle('overall loss under %s, n=%d' % (self.loss_f.get_key(), len(data)))
+        for trainer, display_color, display_name in itertools.izip(self.trainers, self.display_colors, self.display_names):
+            scores_getter = cross_validated_scores_notsep_f(trainer, self.cv_f, self.times)
+            scores = scores_getter(data)
+            key = scores.hard_coded_key
+            loc = scores.location
+            #scores = keyed_DataFrame(scores.iloc[:,[self.filter_f(x) for x in scores.columns]])
+            #scores.hard_coded_key = key
+            #scores.location = loc
+
+            mean_scores = pandas.DataFrame({i:performance_series_f(self.loss_f, [], data, self.times)(fold_score)['mean'] for i,fold_score in list(enumerate(scores))})
+            means = mean_scores.apply(pandas.Series.mean, axis=1)
+            stds = mean_scores.apply(pandas.Series.std, axis=1)
+
+            assert means.shape == stds.shape
+
+            for tick in ax.yaxis.get_major_ticks():
+                tick.label.set_fontsize(textsize) 
+
+            for tick in ax.xaxis.get_major_ticks():
+                tick.label.set_fontsize(textsize) 
+
+
+            ax.errorbar(self.times, means, yerr = stds, label = display_name, color = display_color, linewidth=linewidth, capthick=linewidth, alpha = options.alpha, capsize = 6)
+
+            if self.show_folds:
+                for fold_score in scores:
+                    _performance_series_f = performance_series_f(self.loss_f, self.percentiles, data, self.times)
+                    perfs = _performance_series_f(fold_score)
+                    add_performances_to_ax(ax, perfs, display_color, display_name)
+        """
+        also add in the scores that come from predicting the median of the filtered dataset
+        """
+        """
+        filtered_ys = pandas.DataFrame({x:data.d[x].ys for x in scores.columns if self.filter_f(x)})
+        medians = filtered_ys.apply(np.median, axis=1)
+        losses_d = {}
+        for pid, _ys in filtered_ys.iteritems():
+            temp_d = {}
+            #print pid
+            for time, score in _ys.iteritems():
+
+                if time in data.d[pid].ys.index:
+                    temp_d[time] = self.loss_f(data.d[pid], time, medians[time])
+                
+            losses_d[pid] = pandas.Series(temp_d)
+        losses = pandas.DataFrame(losses_d)
+        median_losses = losses.apply(np.median, axis=1)
+        """
+        #ax.plot(median_losses.index, median_losses, color='magenta')
+
+
+        ax.set_xlim(-1.0,50)
+
+        ax.set_xlabel('months', fontsize = textsize)
+        ax.set_ylabel('loss', fontsize = textsize)
+        ax.legend(prop={'size':textsize}, loc=4)
+        return fig
+
+    def get_introspection_key(self):
+        return 'performances_cv'
         return '%s_%s_%s' % (self.loss_f.get_key(), self.cv_f.get_key(), self.trainers[0].get_key())
         return '%s_%s_%s_%s' % ('bs', self.trainers.get_key(), self.cv_f.get_key(), self.loss_f.get_key())
 
@@ -1245,6 +1676,23 @@ class loss_comparer_f(possibly_cached):
 
     def location_f(self, data):
         return '%s/%s' % (global_stuff.data_home,'several_losses')
+
+def plot_phis_on_fig(posterior, name):
+
+    fig = plt.figure()
+    fig.suptitle(name)
+    
+    as_ax = fig.add_subplot(2,2,1)
+    bs_ax = fig.add_subplot(2,2,2)
+    cs_ax = fig.add_subplot(2,2,3)
+    as_ax.hist(posterior['phi_a'].iloc[:,0], bins=20)
+    as_ax.set_title('$phi_a$')
+    bs_ax.hist(posterior['phi_b'].iloc[:,0], bins=20)
+    bs_ax.set_title('$phi_b$')
+    cs_ax.hist(posterior['phi_c'].iloc[:,0], bins=20)
+    cs_ax.set_title('$phi_c$')
+
+    return fig
 
 class stratified_model_comparer_f(possibly_cached):
     """
@@ -1464,8 +1912,9 @@ class hypers(keyed_object):
     key is hard coded
     """
     def get_introspection_key(self):
-        return 'hyps'
-
+        return '%.2f_%.2f' % (self.c_a, self.l_a)
+        return '%.2f_%.2f_%.2f_%.2f_%.2f_%.2f_%.2f' % (self.c_a, self.c_b, self.c_c, self.l_a, self.l_b, self.l_c, self.l_m)
+            
     def __init__(self, c_a, c_b, c_c, l_a, l_b, l_c, l_m):
         self.c_a, self.c_b, self.c_c, self.l_a, self.l_b, self.l_c, self.l_m = c_a, c_b, c_c, l_a, l_b, l_c, l_m
 
@@ -1522,6 +1971,93 @@ class figs_with_avg_error_f(possibly_cached):
                 figs.append(fig)
         return figs
     
+
+def get_abc_scatter(f, title, f_name, data, xticks):
+    """
+    for a,b,c, plot the scalar feature f on the x-axis
+    have a dataframe whose columns are f value, a, b, c
+    """
+    import matplotlib.pyplot as pyplot
+
+    fig = plt.figure()
+    #fig.suptitle(title)
+
+    y_min, y_max = -0.05, 1.05
+
+    d = {}
+
+    for _datum in data:
+        a,b,c = get_curve_abc(_datum.s, _datum.ys)
+        f_val = f(_datum.pid)
+        d[_datum.pid] = pandas.Series({'f':f_val, 'a':a, 'b':b, 'c':c})
+
+    fabc_df = pandas.DataFrame(d)
+    from scripts.for_paper import options as options    
+    ax = fig.add_subplot(2,2,1)
+
+    textsize = options.textsize
+
+    ax.scatter(fabc_df.loc['f'],fabc_df.loc['a'])
+    ax.set_title('%s vs A' % f_name, fontsize = options.textsize)
+    ax.set_ylim((y_min,y_max))
+
+    for tick in ax.xaxis.get_major_ticks():
+        tick.label.set_fontsize(textsize) 
+
+    for tick in ax.yaxis.get_major_ticks():
+        tick.label.set_fontsize(textsize) 
+
+    #pyplot.locator_params(nbins=5)
+
+    #ax.set_yticks(yticks)
+
+    ax.set_xlabel(f_name, fontsize = textsize)
+    ax.set_ylabel('A', fontsize = textsize, rotation = 'horizontal')
+
+    ax.set_xticks(xticks)
+
+    ax = fig.add_subplot(2,2,2)
+    ax.scatter(fabc_df.loc['f'],fabc_df.loc['b'])
+    ax.set_title('%s vs B' % f_name, fontsize = options.textsize)
+    ax.set_ylim((y_min,y_max))
+
+    for tick in ax.xaxis.get_major_ticks():
+        tick.label.set_fontsize(textsize) 
+
+    for tick in ax.yaxis.get_major_ticks():
+        tick.label.set_fontsize(textsize) 
+
+    #pyplot.locator_params(nbins=5)
+
+    #ax.set_yticks(yticks)
+    ax.set_xticks(xticks)
+
+    ax.set_xlabel(f_name, fontsize = textsize)
+    ax.set_ylabel('B', fontsize = textsize, rotation = 'horizontal')
+
+    ax = fig.add_subplot(2,2,3)
+    ax.scatter(fabc_df.loc['f'],fabc_df.loc['c'])
+    ax.set_title('%s vs C' % f_name, fontsize = options.textsize)
+    #ax.set_ylim((y_min,y_max))
+    ax.set_yscale('log')
+    for tick in ax.xaxis.get_major_ticks():
+        tick.label.set_fontsize(textsize) 
+
+    for tick in ax.yaxis.get_major_ticks():
+        tick.label.set_fontsize(textsize) 
+
+    #pyplot.locator_params(nbins=5)
+
+    #ax.set_yticks(yticks)
+    ax.set_xticks(xticks)
+
+    ax.set_xlabel(f_name, fontsize = textsize)
+    ax.set_ylabel('C', fontsize = textsize, rotation = 'horizontal')
+
+    plt.tight_layout()
+
+    return fig
+
 
 class abc_vs_attributes_scatter_f(possibly_cached):
 
@@ -1615,6 +2151,9 @@ class aggregate_curve_f(possibly_cached):
         return keyed_Series(mean)
 
 
+
+
+
 class aggregate_shape_f(possibly_cached):
 
     def get_introspection_key(self):
@@ -1635,6 +2174,27 @@ class aggregate_shape_f(possibly_cached):
         all_ys = pandas.DataFrame({datum.pid:datum.ys/datum.s for datum in data})
         mean_shape = all_ys.apply(np.mean, axis=1)
         return keyed_Series(mean_shape)
+
+class median_shape_f(possibly_cached):
+
+    def get_introspection_key(self):
+        return 'med_shape'
+
+    def key_f(self, data):
+        return '%s_%s' % (self.get_key(), data.get_key())
+
+    def location_f(self, data):
+        return '%s/%s' % (global_stuff.for_dropbox, 'aggregate_shapes')
+
+    print_handler_f = staticmethod(write_Series)
+
+    read_f = staticmethod(read_Series)
+
+    @key
+    def __call__(self, data):
+        all_ys = pandas.DataFrame({datum.pid:datum.ys/datum.s for datum in data})
+        med_shape = all_ys.apply(nan_median, axis=1)
+        return keyed_Series(med_shape)
 
 
 class figure_combiner_f(possibly_cached):
@@ -1678,9 +2238,12 @@ helpers
 """
 
 def add_performances_to_ax(ax, perfs, color, name):
-    add_series_to_ax(perfs['mean'], ax, color, name, ':')
+    from scripts.for_paper import options as options
+    #add_series_to_ax(perfs['mean'], ax, color, name, '--')
+    mean = perfs['mean']
+    ax.plot(mean.index, mean, color=color, label=name, linewidth=options.linewidth, alpha=options.alpha, linestyle='solid')
     percentiles = perfs[[x for x in perfs.columns if x != 'mean']]
-    fixed = functools.partial(add_series_to_ax, ax=ax, color=color, label=None, linestyle='solid')
+    fixed = functools.partial(add_series_to_ax, ax=ax, color=color, label=None, linestyle='solid', linewidth = options.linewidth)
     percentiles.apply(fixed, axis=0)
     return ax
 
@@ -1709,6 +2272,18 @@ class get_curve_abc_f(possibly_cached):
     @memoize
     def __call__(self, s, curve):
         return get_curve_abc_helper(s, curve)
+
+def get_curve_abc_helper(s, curve):
+    import math
+    import scipy.optimize
+    def obj_f(x):
+        error = 0.0
+        for time, value in curve.iteritems():
+            if not np.isnan(value):
+                error += pow(the_f(time, s, x[0], x[1], x[2]) - value, 2)
+        return error
+    x, f, d = scipy.optimize.fmin_l_bfgs_b(obj_f, np.array([0.5, 0.5, 2.0]), approx_grad = True, bounds = [(0,1),[0,1],[0.1,10]])
+    return x
 
 def get_curve_abc_helper(s, curve):
     import math
@@ -1751,6 +2326,18 @@ def logistic(x):
 def scaled_logistic_loss(x, c):
 
     return 2*(logistic(c*x)-0.5)
+
+
+class logistic_f(keyed_object):
+
+    def __init__(self, c):
+        self.c = c
+
+    def get_introspection_key(self):
+        return '%s_%.2f' % ('logloss', self.c)
+
+    def __call__(self, x):
+        return scaled_logistic_loss(x, self.c)
 
 
 
@@ -1820,6 +2407,17 @@ class bin(object):
         first = 'none' if self.low == None else '%.2f' % self.low
         second = 'none' if self.high == None else '%.2f' % self.high
         return first + '_' + second
+
+class and_bin(object):
+
+    def __init__(self, bin1, bin2):
+        self.bin1, self.bin2 = bin1, bin2
+
+    def __contains__(self, obj):
+        return obj in self.bin1 and obj in self.bin2
+
+    def __repr__(self):
+        return '%s_%s' % (repr(self.bin1), repr(self.bin2))
 
 
 class equals_bin(object):
@@ -1936,6 +2534,13 @@ def override_sysout_dec(f, log_folder):
 def get_seq(start, interval, num):
     return [start + i*interval for i in xrange(num)]
 
+def get_rand_trunc_normal(m, phi):
+    import random
+    ans = random.gauss(m, phi)
+    while ans < 0.0 or ans > 1.0:
+        ans = random.gauss(m, phi)
+    return ans
+
 def get_rand_beta(m, phi, r=None):
     s = (1.0/phi) - 1
     alpha = 1.0 + s*m
@@ -1945,7 +2550,7 @@ def get_rand_beta(m, phi, r=None):
     else:
         return r.betavariate(alpha, beta)
 
-def get_beta_p(x, m, phi):
+def get_beta_log_p(x, m, phi):
     s = (1.0/phi) - 1
     alpha = 1.0 + s*m
     beta = 1.0 + s*(1-m)
@@ -1953,7 +2558,22 @@ def get_beta_p(x, m, phi):
     #return scipy.stats.beta.pdf(x,alpha,beta)
     c = 1.0 / scipy.special.beta(alpha,beta)
     #c = math.gamma(alpha+beta)/(math.gamma(alpha)*(math.gamma(beta)))
+    import math
+    return math.log(c) + (alpha-1) * math.log(x) + (beta-1) * math.log(1-x)
     return c * math.pow(x,alpha-1) * math.pow(1-x,beta-1)
+
+def get_beta_log_p_given_mean(x, mean, phi):
+    s = (1.0/phi) - 1
+    m = (mean*(2+s) - 1) / s
+    print mean, m
+    alpha = 1.0 + s*m
+    beta = 1.0 + s*(1-m)
+    import math, scipy.special
+    #return scipy.stats.beta.pdf(x,alpha,beta)
+    c = 1.0 / scipy.special.beta(alpha,beta)
+    #c = math.gamma(alpha+beta)/(math.gamma(alpha)*(math.gamma(beta)))
+    import math
+    return math.log(c) + (alpha-1) * math.log(x) + (beta-1) * math.log(1-x)
 
 def get_rand_gamma(m, phi, r):
     alpha = 1.0/phi
@@ -2009,12 +2629,16 @@ class multichain_posterior(keyed_dict):
     #    keyed_dict.__init__(posteriors)
 
     def get_chainwise_posteriors(self):
+        pdb.set_trace()
         l = [keyed_dict({}) for i in xrange(self.num_chains)]
         for param, samples in self.iteritems():
-            bin_width = samples.shape[0] / self.num_chains
-            for i in xrange(self.num_chains):
-                low, high = i*bin_width, (i+1)*bin_width
-                l[i][param] = samples.iloc[low:high,:]
+            try:
+                bin_width = samples.shape[0] / self.num_chains
+                for i in xrange(self.num_chains):
+                    low, high = i*bin_width, (i+1)*bin_width
+                    l[i][param] = samples.iloc[low:high,:]
+            except:
+                pass
         return l
                 
 
@@ -2190,3 +2814,82 @@ def stratify_dataset(_data, bin_f, num_bins):
 shitty ass code goes below here
 """
 
+def plot_2_by_2_predictions(data, cv_f, trainer_plotter_cons_tuples, to_plot, plot_truth = False):
+
+    from scripts.for_paper import options as options
+
+    textsize = options.textsize
+
+    fig = plt.figure()
+    
+    k = 0
+
+    for train_data, test_data in cv_f(data):
+        _plotters = []
+        for trainer, plotter_cons in trainer_plotter_cons_tuples:
+            if trainer.normal():
+                predictor = trainer(train_data)
+            else:
+                predictor = trainer(train_data, test_data)
+            _plotters.append(plotter_cons(predictor))
+        for datum in test_data:
+            if to_plot(datum):
+                k = k + 1
+                ax = fig.add_subplot(2,2,k)
+                #ax.set_title(datum.pid)
+                for plotter in _plotters:
+                    plotter(ax, datum)
+                if plot_truth:
+                    ax.plot(datum.ys.index, datum.ys, color='black')
+                for tick in ax.yaxis.get_major_ticks():
+                    tick.label.set_fontsize(textsize) 
+
+                for tick in ax.xaxis.get_major_ticks():
+                    tick.label.set_fontsize(textsize) 
+                ax.set_ylim(0,1)
+                ax.set_xlim(-1,50)
+                if k in [3,4]:
+                    ax.set_xlabel('months', fontsize=textsize)
+                if k in [1,3]:
+                    ax.set_ylabel('scaled fxn value', fontsize=textsize)
+                #ax.legend(prop={'size':textsize}, loc=4)
+                ax.set_ylim((0,1))
+
+    plt.tight_layout()
+
+    return fig
+
+class nan_median_f(keyed_object):
+
+    def __call__(self, s):
+        ok = s.iloc[[not np.isnan(x) for x in s]]
+        return np.median(ok)
+
+    def get_introspection_key(self):
+        return 'nanmedian'
+
+nan_median = nan_median_f()
+
+def get_num_above(datum, tol):
+    count = 0
+    return sum([v > datum.s for k,v in datum.ys.iteritems()])
+
+def has_num_straight_zeros(datum, num):
+    for i in range(len(datum.ys)-num):
+        if sum([datum.ys.iloc[x] < 0.01001 for x in range(i,i+num)]) == num:
+            return True
+    return False
+
+def asymptote_above_init(datum):
+    a,b,c = get_curve_abc(1.0, datum.ys)
+    return the_f(48,1,a,b,c) - datum.s
+    return (1.0 - a) - datum.s
+
+def draw_curve(ax, s, s_loc, curve, color, label, lw, alpha):
+    ax.plot([s_loc,0],[s,s], color=color, linewidth=lw)
+    try:
+        ax.axvline(0.5, ymin=curve[1], ymax=s, linewidth=2.5, color=color, alpha=0.3)
+    except KeyError:
+        ax.axvline(0.5, ymin=curve[2], ymax=s, linewidth=2.5, color=color, alpha=0.3)
+    ax.plot(curve.index, curve, label = label, color = color, linewidth=lw)
+    ax.set_xlim((s_loc,50))

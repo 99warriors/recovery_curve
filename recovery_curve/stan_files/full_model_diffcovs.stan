@@ -30,17 +30,11 @@ data{
 	real<lower=0> l_c;
 	real<lower=0> l_m;
 
-	#real<lower=0,upper=1> phi_a;
-	#real<lower=0,upper=1> phi_b;
-	#real<lower=0,upper=1> phi_c;
-
 }
 parameters{
 	vector[K_A] B_a;
 	vector[K_B] B_b;
 	vector[K_C] B_c;
-	#real B_c[K];
-	#real B_c;
 	
 	real<lower=0,upper=1> phi_a;
 	real<lower=0,upper=1> phi_b;
@@ -65,12 +59,6 @@ transformed parameters{
 	      m_as[i] <- inv_logit(logit(pop_a) + dot_product(xas[i], B_a));		      
 	      m_bs[i] <- inv_logit(logit(pop_b) + dot_product(xbs[i], B_b));
 	      m_cs[i] <- exp(log(pop_c) + dot_product(xcs[i], B_c));
-	      #m_cs[i] <- exp(log(pop_c) + xs[i,1]* B_c[1] + xs[i,1]* B_c[2]);
-	      #print(B_c[1],B_c[2],xs[i,1],xs[i,2]);
-	      #m_cs[i] <- exp(log(pop_c) + xs[i,2]* B_c[2]);
-	      #m_cs[i] <- exp(log(pop_c) + dot_product(xs[i], B_c));
-	      #m_cs[i] <- exp(log(pop_c) + dot_product(row(xs,i), B_c));
-	      
 	}
 	
 	s_a <- 1.0 / phi_a - 1;
@@ -104,11 +92,7 @@ model{
 
 	for(i in 1:N){
 	      for(j in 1:ls[i]){
-	      	    #vs[c] ~ normal(0, phi_m);	
-		    #lp__ <- lp__ + normal_log(vs[c], as[i], phi_m);
-	      	    #vs[c] ~ normal(m_as[i], 0.1);	
 	      	    vs[c] ~ normal(ss[i] * (1.0 - as[i] - (bs[i] * (1.0 - as[i]) * exp(-1.0 * ts[c] / cs[i]))), phi_m);
-		    #vs[c] ~ gamma(s_c, (s_c - 1.0) / m_cs[i]);
 		    c <- c + 1;
 	      }
 	}
